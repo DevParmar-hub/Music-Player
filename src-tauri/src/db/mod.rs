@@ -1,3 +1,4 @@
+mod migrations;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -34,6 +35,8 @@ impl Database {
                 ",
             )
             .map_err(|error| error.to_string())?;
+            
+        migrations::run_migrations(&connection)?;
 
         Ok(Self {
             connection: Mutex::new(connection),
