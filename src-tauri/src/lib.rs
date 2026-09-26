@@ -15,17 +15,46 @@ fn verify_database(state: State<'_, db::Database>) -> Result<String, String> {
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let result: i32 = connection
-        .query_row("SELECT 1", [], |row| row.get(0))
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name NOT LIKE 'sqlite_%'
+            ORDER BY name;
+            ",
+        )
         .map_err(|error| error.to_string())?;
 
-    if result != 1 {
-        return Err("SQLite SELECT 1 returned an unexpected result.".to_string());
-    }
+    let tables = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| error.to_string())?;
 
     Ok(format!(
-        "Database connected successfully\nPath: {}",
-        state.path.display()
+        "Database connected successfully\nPath: {}\nTables: {:?}",
+        state.path.display(),
+        tables
+    ))
+}
+
+#[tauri::command]
+fn test_insert_artist(
+    state: State<'_, db::Database>,
+    name: String,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let artist_id = db::queries::insert_artist(&connection, &name)?;
+
+    Ok(format!(
+        "Artist inserted successfully\nID: {}\nName: {}",
+        artist_id, name
     ))
 }
 
@@ -47,10 +76,11 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            greet,
-            verify_database
-        ])
+.invoke_handler(tauri::generate_handler![
+    greet,
+    verify_database,
+    test_insert_artist
+])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

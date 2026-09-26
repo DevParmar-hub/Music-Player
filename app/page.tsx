@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 export default function Home() {
   const [message, setMessage] = useState('');
   const [databaseStatus, setDatabaseStatus] = useState('');
+  const [artistStatus, setArtistStatus] = useState('');
 
   async function testRust() {
     try {
@@ -27,6 +28,20 @@ export default function Home() {
     } catch (error) {
       setDatabaseStatus(
         `Database connection failed: ${String(error)}`
+      );
+    }
+  }
+
+  async function testInsertArtist() {
+    try {
+      const response = await invoke<string>('test_insert_artist', {
+        name: 'Linkin Park',
+      });
+
+      setArtistStatus(response);
+    } catch (error) {
+      setArtistStatus(
+        `Artist insertion failed: ${String(error)}`
       );
     }
   }
@@ -55,6 +70,17 @@ export default function Home() {
 
       <p className="max-w-2xl whitespace-pre-wrap break-all">
         {databaseStatus}
+      </p>
+
+      <button
+        onClick={testInsertArtist}
+        className="rounded-lg bg-white px-4 py-2 text-black"
+      >
+        Test Insert Artist
+      </button>
+
+      <p className="max-w-2xl whitespace-pre-wrap break-all">
+        {artistStatus}
       </p>
     </main>
   );
