@@ -8,6 +8,11 @@ export default function Home() {
   const [databaseStatus, setDatabaseStatus] = useState('');
   const [artistStatus, setArtistStatus] = useState('');
   const [albumStatus, setAlbumStatus] = useState('');
+  const [trackStatus, setTrackStatus] = useState('');
+
+  // -------------------------
+  // Rust IPC Test
+  // -------------------------
 
   async function testRust() {
     try {
@@ -20,6 +25,10 @@ export default function Home() {
       setMessage(`Rust error: ${String(error)}`);
     }
   }
+
+  // -------------------------
+  // Database Test
+  // -------------------------
 
   async function testDatabase() {
     try {
@@ -124,33 +133,125 @@ export default function Home() {
     }
   }
 
+  // -------------------------
+  // Track Tests
+  // -------------------------
+
+  async function testInsertTrack() {
+    try {
+      const response = await invoke<string>('test_insert_track', {
+        contentKey: 'test-content-key-001',
+        filePath: 'C:\\Music\\Linkin Park\\In The End.mp3',
+        title: 'In the End',
+        artistId: 1,
+        albumId: 1,
+        genre: 'Alternative Rock',
+        trackNumber: 8,
+        discNumber: 1,
+        durationMs: 216000,
+        dateAdded: Date.now(),
+        fileMtime: Date.now(),
+      });
+
+      setTrackStatus(response);
+    } catch (error) {
+      setTrackStatus(
+        `Track insertion failed: ${String(error)}`
+      );
+    }
+  }
+
+  async function testGetTracks() {
+    try {
+      const response = await invoke<string>('test_get_tracks');
+
+      setTrackStatus(`Tracks:\n${response}`);
+    } catch (error) {
+      setTrackStatus(
+        `Track read failed: ${String(error)}`
+      );
+    }
+  }
+
+  async function testUpdateTrack() {
+    try {
+      const response = await invoke<string>('test_update_track', {
+        trackId: 1,
+        title: 'In the End (Updated)',
+        artistId: 1,
+        albumId: 1,
+        genre: 'Rock',
+        trackNumber: 8,
+        discNumber: 1,
+      });
+
+      setTrackStatus(response);
+    } catch (error) {
+      setTrackStatus(
+        `Track update failed: ${String(error)}`
+      );
+    }
+  }
+
+  async function testDeleteTrack() {
+    try {
+      const response = await invoke<string>('test_delete_track', {
+        trackId: 1,
+      });
+
+      setTrackStatus(response);
+    } catch (error) {
+      setTrackStatus(
+        `Track deletion failed: ${String(error)}`
+      );
+    }
+  }
+
+  // -------------------------
+  // UI
+  // -------------------------
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
       <h1 className="text-4xl font-bold">
         Local Music Player
       </h1>
 
       {/* Rust IPC */}
-      <button
-        onClick={testRust}
-        className="rounded-lg bg-white px-4 py-2 text-black"
-      >
-        Test Rust
-      </button>
+      <section className="flex flex-col items-center gap-3">
+        <h2 className="text-2xl font-semibold">
+          Rust IPC
+        </h2>
 
-      <p>{message}</p>
+        <button
+          onClick={testRust}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Rust
+        </button>
+
+        <p className="max-w-2xl whitespace-pre-wrap break-all">
+          {message}
+        </p>
+      </section>
 
       {/* Database */}
-      <button
-        onClick={testDatabase}
-        className="rounded-lg bg-white px-4 py-2 text-black"
-      >
-        Test Database
-      </button>
+      <section className="flex flex-col items-center gap-3">
+        <h2 className="text-2xl font-semibold">
+          Database
+        </h2>
 
-      <p className="max-w-2xl whitespace-pre-wrap break-all">
-        {databaseStatus}
-      </p>
+        <button
+          onClick={testDatabase}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Database
+        </button>
+
+        <p className="max-w-2xl whitespace-pre-wrap break-all">
+          {databaseStatus}
+        </p>
+      </section>
 
       {/* Artists */}
       <section className="flex flex-col items-center gap-3">
@@ -213,6 +314,45 @@ export default function Home() {
 
         <p className="max-w-2xl whitespace-pre-wrap break-all">
           {albumStatus}
+        </p>
+      </section>
+
+      {/* Tracks */}
+      <section className="flex flex-col items-center gap-3">
+        <h2 className="text-2xl font-semibold">
+          Tracks
+        </h2>
+
+        <button
+          onClick={testInsertTrack}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Insert Track
+        </button>
+
+        <button
+          onClick={testGetTracks}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Get Tracks
+        </button>
+
+        <button
+          onClick={testUpdateTrack}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Update Track
+        </button>
+
+        <button
+          onClick={testDeleteTrack}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Delete Track
+        </button>
+
+        <p className="max-w-2xl whitespace-pre-wrap break-all">
+          {trackStatus}
         </p>
       </section>
     </main>

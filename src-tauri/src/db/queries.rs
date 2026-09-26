@@ -1,6 +1,32 @@
 use rusqlite::{params, Connection};
 
-pub fn insert_artist(connection: &Connection, name: &str) -> Result<i64, String> {
+// Track Row
+
+#[derive(Debug)]
+pub struct TrackRow {
+    pub id: i64,
+    pub file_path: String,
+    pub title: String,
+    pub artist_id: Option<i64>,
+    pub album_id: Option<i64>,
+    pub genre: Option<String>,
+    pub track_number: Option<i64>,
+    pub disc_number: Option<i64>,
+    pub duration_ms: i64,
+    pub date_added: i64,
+    pub last_played: Option<i64>,
+    pub play_count: i64,
+    pub file_mtime: i64,
+    pub available: i64,
+}
+
+// Artist Queries
+
+
+pub fn insert_artist(
+    connection: &Connection,
+    name: &str,
+) -> Result<i64, String> {
     connection
         .execute(
             "INSERT INTO artists (name) VALUES (?1)",
@@ -11,7 +37,9 @@ pub fn insert_artist(connection: &Connection, name: &str) -> Result<i64, String>
     Ok(connection.last_insert_rowid())
 }
 
-pub fn get_artists(connection: &Connection) -> Result<Vec<(i64, String)>, String> {
+pub fn get_artists(
+    connection: &Connection,
+) -> Result<Vec<(i64, String)>, String> {
     let mut statement = connection
         .prepare(
             "
@@ -34,6 +62,26 @@ pub fn get_artists(connection: &Connection) -> Result<Vec<(i64, String)>, String
         .map_err(|error| error.to_string())?;
 
     Ok(artists)
+}
+
+// Album Queries
+
+pub fn insert_album(
+    connection: &Connection,
+    title: &str,
+    artist_id: Option<i64>,
+) -> Result<i64, String> {
+    connection
+        .execute(
+            "
+            INSERT INTO albums (title, artist_id)
+            VALUES (?1, ?2)
+            ",
+            params![title, artist_id],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(connection.last_insert_rowid())
 }
 
 pub fn get_albums(
@@ -83,7 +131,10 @@ pub fn update_album(
         .map_err(|error| error.to_string())?;
 
     if rows_affected == 0 {
-        return Err(format!("Album with ID {} was not found", album_id));
+        return Err(format!(
+            "Album with ID {} was not found",
+            album_id
+        ));
     }
 
     Ok(())
@@ -101,26 +152,185 @@ pub fn delete_album(
         .map_err(|error| error.to_string())?;
 
     if rows_affected == 0 {
-        return Err(format!("Album with ID {} was not found", album_id));
+        return Err(format!(
+            "Album with ID {} was not found",
+            album_id
+        ));
     }
 
     Ok(())
 }
 
-pub fn insert_album(
+// Track Queries
+
+pub fn insert_track(
     connection: &Connection,
+    content_key: &str,
+    file_path: &str,
     title: &str,
     artist_id: Option<i64>,
+    album_id: Option<i64>,
+    genre: Option<&str>,
+    track_number: Option<i64>,
+    disc_number: Option<i64>,
+    duration_ms: i64,
+    date_added: i64,
+    file_mtime: i64,
 ) -> Result<i64, String> {
     connection
         .execute(
             "
-            INSERT INTO albums (title, artist_id)
-            VALUES (?1, ?2)
+            INSERT INTO tracks (
+                content_key,
+                file_path,
+                title,
+                artist_id,
+                album_id,
+                genre,
+                track_number,
+                disc_number,
+                duration_ms,
+                date_added,
+                file_mtime
+            )
+            VALUES (
+                ?1, ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8, ?9, ?10, ?11
+            )
             ",
-            params![title, artist_id],
+            params![
+                content_key,
+                file_path,
+                title,
+                artist_id,
+                album_id,
+                genre,
+                track_number,
+                disc_number,
+                duration_ms,
+                date_added,
+                file_mtime
+            ],
         )
         .map_err(|error| error.to_string())?;
 
     Ok(connection.last_insert_rowid())
+}
+
+pub fn get_tracks(
+    connection: &Connection,
+) -> Result<Vec<TrackRow>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT
+                id,
+                file_path,
+                title,
+                artist_id,
+                album_id,
+                genre,
+                track_number,
+                disc_number,
+                duration_ms,
+                date_added,
+                last_played,
+                play_count,
+                file_mtime,
+                available
+            FROM tracks
+            ORDER BY title;
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    let tracks = statement
+        .query_map([], |row| {
+            Ok(TrackRow {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                title: row.get(2)?,
+                artist_id: row.get(3)?,
+                album_id: row.get(4)?,
+                genre: row.get(5)?,
+                track_number: row.get(6)?,
+                disc_number: row.get(7)?,
+                duration_ms: row.get(8)?,
+                date_added: row.get(9)?,
+                last_played: row.get(10)?,
+                play_count: row.get(11)?,
+                file_mtime: row.get(12)?,
+                available: row.get(13)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<TrackRow>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    Ok(tracks)
+}
+
+pub fn update_track(
+    connection: &Connection,
+    track_id: i64,
+    title: &str,
+    artist_id: Option<i64>,
+    album_id: Option<i64>,
+    genre: Option<&str>,
+    track_number: Option<i64>,
+    disc_number: Option<i64>,
+) -> Result<(), String> {
+    let rows_affected = connection
+        .execute(
+            "
+            UPDATE tracks
+            SET title = ?1,
+                artist_id = ?2,
+                album_id = ?3,
+                genre = ?4,
+                track_number = ?5,
+                disc_number = ?6
+            WHERE id = ?7
+            ",
+            params![
+                title,
+                artist_id,
+                album_id,
+                genre,
+                track_number,
+                disc_number,
+                track_id
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+
+    if rows_affected == 0 {
+        return Err(format!(
+            "Track with ID {} was not found",
+            track_id
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn delete_track(
+    connection: &Connection,
+    track_id: i64,
+) -> Result<(), String> {
+    let rows_affected = connection
+        .execute(
+            "DELETE FROM tracks WHERE id = ?1",
+            params![track_id],
+        )
+        .map_err(|error| error.to_string())?;
+
+    if rows_affected == 0 {
+        return Err(format!(
+            "Track with ID {} was not found",
+            track_id
+        ));
+    }
+
+    Ok(())
 }

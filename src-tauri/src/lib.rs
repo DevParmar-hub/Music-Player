@@ -156,6 +156,116 @@ fn test_delete_album(
     ))
 }
 
+#[tauri::command]
+fn test_insert_track(
+    state: State<'_, db::Database>,
+    content_key: String,
+    file_path: String,
+    title: String,
+    artist_id: Option<i64>,
+    album_id: Option<i64>,
+    genre: Option<String>,
+    track_number: Option<i64>,
+    disc_number: Option<i64>,
+    duration_ms: i64,
+    date_added: i64,
+    file_mtime: i64,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let track_id = db::queries::insert_track(
+        &connection,
+        &content_key,
+        &file_path,
+        &title,
+        artist_id,
+        album_id,
+        genre.as_deref(),
+        track_number,
+        disc_number,
+        duration_ms,
+        date_added,
+        file_mtime,
+    )?;
+
+    Ok(format!(
+        "Track inserted successfully\nID: {}\nTitle: {}\nPath: {}",
+        track_id,
+        title,
+        file_path
+    ))
+}
+
+#[tauri::command]
+fn test_get_tracks(
+    state: State<'_, db::Database>,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let tracks = db::queries::get_tracks(&connection)?;
+
+    Ok(format!("{:#?}", tracks))
+}
+
+#[tauri::command]
+fn test_update_track(
+    state: State<'_, db::Database>,
+    track_id: i64,
+    title: String,
+    artist_id: Option<i64>,
+    album_id: Option<i64>,
+    genre: Option<String>,
+    track_number: Option<i64>,
+    disc_number: Option<i64>,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    db::queries::update_track(
+        &connection,
+        track_id,
+        &title,
+        artist_id,
+        album_id,
+        genre.as_deref(),
+        track_number,
+        disc_number,
+    )?;
+
+    Ok(format!(
+        "Track updated successfully\nID: {}\nTitle: {}\nGenre: {}",
+        track_id,
+        title,
+        genre.as_deref().unwrap_or("None")
+    ))
+}
+
+#[tauri::command]
+fn test_delete_track(
+    state: State<'_, db::Database>,
+    track_id: i64,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    db::queries::delete_track(&connection, track_id)?;
+
+    Ok(format!(
+        "Track deleted successfully\nID: {}",
+        track_id
+    ))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -182,7 +292,11 @@ pub fn run() {
     test_insert_album,
     test_get_albums,
     test_update_album,
-    test_delete_album
+    test_delete_album,
+    test_insert_track,
+    test_get_tracks,
+    test_update_track,
+    test_delete_track
 ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
