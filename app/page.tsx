@@ -9,6 +9,8 @@ export default function Home() {
   const [artistStatus, setArtistStatus] = useState('');
   const [albumStatus, setAlbumStatus] = useState('');
   const [trackStatus, setTrackStatus] = useState('');
+  const [scannerStatus, setScannerStatus] = useState('');
+  const [musicDirectory, setMusicDirectory] = useState('');
 
   // -------------------------
   // Rust IPC Test
@@ -208,6 +210,41 @@ export default function Home() {
   }
 
   // -------------------------
+  // Scanner Test
+  // -------------------------
+
+  async function testScanMusicDirectory() {
+    if (!musicDirectory.trim()) {
+      setScannerStatus('Please enter a music directory.');
+      return;
+    }
+
+    try {
+      const response = await invoke<string[]>(
+        'scan_music_directory',
+        {
+          path: musicDirectory,
+        }
+      );
+
+      if (response.length === 0) {
+        setScannerStatus(
+          'Scan completed successfully.\nNo supported audio files found.'
+        );
+        return;
+      }
+
+      setScannerStatus(
+        `Scan completed successfully.\n\nFound ${response.length} audio file(s):\n\n${response.join('\n')}`
+      );
+    } catch (error) {
+      setScannerStatus(
+        `Scanner failed: ${String(error)}`
+      );
+    }
+  }
+
+  // -------------------------
   // UI
   // -------------------------
 
@@ -353,6 +390,34 @@ export default function Home() {
 
         <p className="max-w-2xl whitespace-pre-wrap break-all">
           {trackStatus}
+        </p>
+      </section>
+
+      {/* Scanner */}
+      <section className="flex w-full max-w-3xl flex-col items-center gap-3">
+        <h2 className="text-2xl font-semibold">
+          Music Scanner
+        </h2>
+
+        <input
+          type="text"
+          value={musicDirectory}
+          onChange={(event) =>
+            setMusicDirectory(event.target.value)
+          }
+          placeholder="Enter music folder path"
+          className="w-full rounded-lg px-4 py-2 text-black"
+        />
+
+        <button
+          onClick={testScanMusicDirectory}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Scan Music Directory
+        </button>
+
+        <p className="w-full max-w-3xl whitespace-pre-wrap break-all">
+          {scannerStatus}
         </p>
       </section>
     </main>

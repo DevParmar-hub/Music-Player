@@ -1,4 +1,5 @@
 mod db;
+mod scanner;
 
 use tauri::{Manager, State};
 
@@ -38,6 +39,34 @@ fn verify_database(state: State<'_, db::Database>) -> Result<String, String> {
         state.path.display(),
         tables
     ))
+}
+
+#[tauri::command]
+fn scan_music_directory(
+    path: String,
+) -> Result<Vec<String>, String> {
+    let root = std::path::Path::new(&path);
+
+    if !root.exists() {
+        return Err(format!(
+            "Directory does not exist: {}",
+            path
+        ));
+    }
+
+    if !root.is_dir() {
+        return Err(format!(
+            "Path is not a directory: {}",
+            path
+        ));
+    }
+
+    let tracks = scanner::scan_directory(root)?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect())
 }
 
 #[tauri::command]
@@ -287,6 +316,7 @@ pub fn run() {
 .invoke_handler(tauri::generate_handler![
     greet,
     verify_database,
+    scan_music_directory,
     test_insert_artist,
     test_get_artists,
     test_insert_album,

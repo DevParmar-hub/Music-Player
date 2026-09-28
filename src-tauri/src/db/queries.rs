@@ -1,10 +1,13 @@
 use rusqlite::{params, Connection};
 
+// ============================================================
 // Track Row
+// ============================================================
 
 #[derive(Debug)]
 pub struct TrackRow {
     pub id: i64,
+    pub content_key: String,
     pub file_path: String,
     pub title: String,
     pub artist_id: Option<i64>,
@@ -20,8 +23,9 @@ pub struct TrackRow {
     pub available: i64,
 }
 
+// ============================================================
 // Artist Queries
-
+// ============================================================
 
 pub fn insert_artist(
     connection: &Connection,
@@ -64,7 +68,9 @@ pub fn get_artists(
     Ok(artists)
 }
 
+// ============================================================
 // Album Queries
+// ============================================================
 
 pub fn insert_album(
     connection: &Connection,
@@ -161,7 +167,9 @@ pub fn delete_album(
     Ok(())
 }
 
+// ============================================================
 // Track Queries
+// ============================================================
 
 pub fn insert_track(
     connection: &Connection,
@@ -225,6 +233,7 @@ pub fn get_tracks(
             "
             SELECT
                 id,
+                content_key,
                 file_path,
                 title,
                 artist_id,
@@ -248,19 +257,20 @@ pub fn get_tracks(
         .query_map([], |row| {
             Ok(TrackRow {
                 id: row.get(0)?,
-                file_path: row.get(1)?,
-                title: row.get(2)?,
-                artist_id: row.get(3)?,
-                album_id: row.get(4)?,
-                genre: row.get(5)?,
-                track_number: row.get(6)?,
-                disc_number: row.get(7)?,
-                duration_ms: row.get(8)?,
-                date_added: row.get(9)?,
-                last_played: row.get(10)?,
-                play_count: row.get(11)?,
-                file_mtime: row.get(12)?,
-                available: row.get(13)?,
+                content_key: row.get(1)?,
+                file_path: row.get(2)?,
+                title: row.get(3)?,
+                artist_id: row.get(4)?,
+                album_id: row.get(5)?,
+                genre: row.get(6)?,
+                track_number: row.get(7)?,
+                disc_number: row.get(8)?,
+                duration_ms: row.get(9)?,
+                date_added: row.get(10)?,
+                last_played: row.get(11)?,
+                play_count: row.get(12)?,
+                file_mtime: row.get(13)?,
+                available: row.get(14)?,
             })
         })
         .map_err(|error| error.to_string())?
