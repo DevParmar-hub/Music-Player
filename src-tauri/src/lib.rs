@@ -1,4 +1,5 @@
 mod db;
+mod metadata;
 mod scanner;
 
 use tauri::{Manager, State};
@@ -67,6 +68,17 @@ fn scan_music_directory(
         .into_iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect())
+}
+
+#[tauri::command]
+fn test_read_metadata(
+    path: String,
+) -> Result<String, String> {
+    let metadata = metadata::read_metadata(
+        std::path::Path::new(&path)
+    )?;
+
+    Ok(format!("{:#?}", metadata))
 }
 
 #[tauri::command]
@@ -317,6 +329,7 @@ pub fn run() {
     greet,
     verify_database,
     scan_music_directory,
+    test_read_metadata,
     test_insert_artist,
     test_get_artists,
     test_insert_album,

@@ -50,9 +50,12 @@ export default function Home() {
 
   async function testInsertArtist() {
     try {
-      const response = await invoke<string>('test_insert_artist', {
-        name: 'Linkin Park',
-      });
+      const response = await invoke<string>(
+        'test_insert_artist',
+        {
+          name: 'Linkin Park',
+        }
+      );
 
       setArtistStatus(response);
     } catch (error) {
@@ -64,7 +67,9 @@ export default function Home() {
 
   async function testGetArtists() {
     try {
-      const response = await invoke<string>('test_get_artists');
+      const response = await invoke<string>(
+        'test_get_artists'
+      );
 
       setArtistStatus(`Artists:\n${response}`);
     } catch (error) {
@@ -80,10 +85,13 @@ export default function Home() {
 
   async function testInsertAlbum() {
     try {
-      const response = await invoke<string>('test_insert_album', {
-        title: 'Hybrid Theory',
-        artistId: 1,
-      });
+      const response = await invoke<string>(
+        'test_insert_album',
+        {
+          title: 'Hybrid Theory',
+          artistId: 1,
+        }
+      );
 
       setAlbumStatus(response);
     } catch (error) {
@@ -95,7 +103,9 @@ export default function Home() {
 
   async function testGetAlbums() {
     try {
-      const response = await invoke<string>('test_get_albums');
+      const response = await invoke<string>(
+        'test_get_albums'
+      );
 
       setAlbumStatus(`Albums:\n${response}`);
     } catch (error) {
@@ -107,11 +117,14 @@ export default function Home() {
 
   async function testUpdateAlbum() {
     try {
-      const response = await invoke<string>('test_update_album', {
-        albumId: 1,
-        title: 'Hybrid Theory (Updated)',
-        artistId: 1,
-      });
+      const response = await invoke<string>(
+        'test_update_album',
+        {
+          albumId: 1,
+          title: 'Hybrid Theory (Updated)',
+          artistId: 1,
+        }
+      );
 
       setAlbumStatus(response);
     } catch (error) {
@@ -123,9 +136,12 @@ export default function Home() {
 
   async function testDeleteAlbum() {
     try {
-      const response = await invoke<string>('test_delete_album', {
-        albumId: 1,
-      });
+      const response = await invoke<string>(
+        'test_delete_album',
+        {
+          albumId: 1,
+        }
+      );
 
       setAlbumStatus(response);
     } catch (error) {
@@ -141,19 +157,23 @@ export default function Home() {
 
   async function testInsertTrack() {
     try {
-      const response = await invoke<string>('test_insert_track', {
-        contentKey: 'test-content-key-001',
-        filePath: 'C:\\Music\\Linkin Park\\In The End.mp3',
-        title: 'In the End',
-        artistId: 1,
-        albumId: 1,
-        genre: 'Alternative Rock',
-        trackNumber: 8,
-        discNumber: 1,
-        durationMs: 216000,
-        dateAdded: Date.now(),
-        fileMtime: Date.now(),
-      });
+      const response = await invoke<string>(
+        'test_insert_track',
+        {
+          contentKey: 'test-content-key-001',
+          filePath:
+            'C:\\Music\\Linkin Park\\In The End.mp3',
+          title: 'In the End',
+          artistId: 1,
+          albumId: 1,
+          genre: 'Alternative Rock',
+          trackNumber: 8,
+          discNumber: 1,
+          durationMs: 216000,
+          dateAdded: Date.now(),
+          fileMtime: Date.now(),
+        }
+      );
 
       setTrackStatus(response);
     } catch (error) {
@@ -165,7 +185,9 @@ export default function Home() {
 
   async function testGetTracks() {
     try {
-      const response = await invoke<string>('test_get_tracks');
+      const response = await invoke<string>(
+        'test_get_tracks'
+      );
 
       setTrackStatus(`Tracks:\n${response}`);
     } catch (error) {
@@ -177,15 +199,18 @@ export default function Home() {
 
   async function testUpdateTrack() {
     try {
-      const response = await invoke<string>('test_update_track', {
-        trackId: 1,
-        title: 'In the End (Updated)',
-        artistId: 1,
-        albumId: 1,
-        genre: 'Rock',
-        trackNumber: 8,
-        discNumber: 1,
-      });
+      const response = await invoke<string>(
+        'test_update_track',
+        {
+          trackId: 1,
+          title: 'In the End (Updated)',
+          artistId: 1,
+          albumId: 1,
+          genre: 'Rock',
+          trackNumber: 8,
+          discNumber: 1,
+        }
+      );
 
       setTrackStatus(response);
     } catch (error) {
@@ -197,9 +222,12 @@ export default function Home() {
 
   async function testDeleteTrack() {
     try {
-      const response = await invoke<string>('test_delete_track', {
-        trackId: 1,
-      });
+      const response = await invoke<string>(
+        'test_delete_track',
+        {
+          trackId: 1,
+        }
+      );
 
       setTrackStatus(response);
     } catch (error) {
@@ -215,7 +243,9 @@ export default function Home() {
 
   async function testScanMusicDirectory() {
     if (!musicDirectory.trim()) {
-      setScannerStatus('Please enter a music directory.');
+      setScannerStatus(
+        'Please enter a music directory.'
+      );
       return;
     }
 
@@ -235,11 +265,34 @@ export default function Home() {
       }
 
       setScannerStatus(
-        `Scan completed successfully.\n\nFound ${response.length} audio file(s):\n\n${response.join('\n')}`
+        `Scan completed successfully.\n\nFound ${response.length} audio file(s):\n\n${response.join(
+          '\n'
+        )}`
       );
     } catch (error) {
       setScannerStatus(
         `Scanner failed: ${String(error)}`
+      );
+    }
+  }
+
+  // -------------------------
+  // Metadata Test
+  // -------------------------
+
+  async function testReadMetadata() {
+    try {
+      const response = await invoke<string>(
+        'test_read_metadata',
+        {
+          path: 'C:\\Users\\ACER\\Music\\test.mp3',
+        }
+      );
+
+      setScannerStatus(`Metadata:\n${response}`);
+    } catch (error) {
+      setScannerStatus(
+        `Metadata read failed: ${String(error)}`
       );
     }
   }
@@ -414,6 +467,13 @@ export default function Home() {
           className="rounded-lg bg-white px-4 py-2 text-black"
         >
           Scan Music Directory
+        </button>
+
+        <button
+          onClick={testReadMetadata}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Read Metadata
         </button>
 
         <p className="w-full max-w-3xl whitespace-pre-wrap break-all">
