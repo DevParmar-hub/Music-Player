@@ -12,9 +12,9 @@ export default function Home() {
   const [scannerStatus, setScannerStatus] = useState('');
   const [musicDirectory, setMusicDirectory] = useState('');
 
-  // -------------------------
-  // Rust IPC Test
-  // -------------------------
+  // ============================================================
+  // Rust IPC
+  // ============================================================
 
   async function testRust() {
     try {
@@ -28,9 +28,9 @@ export default function Home() {
     }
   }
 
-  // -------------------------
-  // Database Test
-  // -------------------------
+  // ============================================================
+  // Database
+  // ============================================================
 
   async function testDatabase() {
     try {
@@ -44,9 +44,9 @@ export default function Home() {
     }
   }
 
-  // -------------------------
+  // ============================================================
   // Artist Tests
-  // -------------------------
+  // ============================================================
 
   async function testInsertArtist() {
     try {
@@ -79,9 +79,9 @@ export default function Home() {
     }
   }
 
-  // -------------------------
+  // ============================================================
   // Album Tests
-  // -------------------------
+  // ============================================================
 
   async function testInsertAlbum() {
     try {
@@ -151,9 +151,9 @@ export default function Home() {
     }
   }
 
-  // -------------------------
+  // ============================================================
   // Track Tests
-  // -------------------------
+  // ============================================================
 
   async function testInsertTrack() {
     try {
@@ -237,15 +237,16 @@ export default function Home() {
     }
   }
 
-  // -------------------------
-  // Scanner Test
-  // -------------------------
+  // ============================================================
+  // Music Scanner
+  // ============================================================
 
   async function testScanMusicDirectory() {
     if (!musicDirectory.trim()) {
       setScannerStatus(
         'Please enter a music directory.'
       );
+
       return;
     }
 
@@ -259,15 +260,17 @@ export default function Home() {
 
       if (response.length === 0) {
         setScannerStatus(
-          'Scan completed successfully.\nNo supported audio files found.'
+          'Scan completed successfully.\n' +
+            'No supported audio files found.'
         );
+
         return;
       }
 
       setScannerStatus(
-        `Scan completed successfully.\n\nFound ${response.length} audio file(s):\n\n${response.join(
-          '\n'
-        )}`
+        `Scan completed successfully.\n\n` +
+          `Found ${response.length} audio file(s):\n\n` +
+          response.join('\n')
       );
     } catch (error) {
       setScannerStatus(
@@ -276,9 +279,9 @@ export default function Home() {
     }
   }
 
-  // -------------------------
-  // Metadata Test
-  // -------------------------
+  // ============================================================
+  // Metadata
+  // ============================================================
 
   async function testReadMetadata() {
     try {
@@ -289,7 +292,9 @@ export default function Home() {
         }
       );
 
-      setScannerStatus(`Metadata:\n${response}`);
+      setScannerStatus(
+        `Metadata:\n${response}`
+      );
     } catch (error) {
       setScannerStatus(
         `Metadata read failed: ${String(error)}`
@@ -297,17 +302,65 @@ export default function Home() {
     }
   }
 
-  // -------------------------
+  // ============================================================
+  // Content Identity
+  // ============================================================
+
+  async function testContentKey() {
+    try {
+      const response = await invoke<string>(
+        'test_content_key',
+        {
+          path: 'C:\\Users\\ACER\\Music\\test.mp3',
+        }
+      );
+
+      setScannerStatus(
+        `Content Key:\n${response}`
+      );
+    } catch (error) {
+      setScannerStatus(
+        `Content key generation failed: ${String(error)}`
+      );
+    }
+  }
+
+  // ============================================================
+  // Library Indexer
+  // ============================================================
+
+  async function testIndexTrack() {
+    try {
+      const response = await invoke<string>(
+        'index_music_track',
+        {
+          path: 'C:\\Users\\ACER\\Music\\test.mp3',
+        }
+      );
+
+      setScannerStatus(response);
+    } catch (error) {
+      setScannerStatus(
+        `Indexing failed: ${String(error)}`
+      );
+    }
+  }
+
+  // ============================================================
   // UI
-  // -------------------------
+  // ============================================================
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+
       <h1 className="text-4xl font-bold">
         Local Music Player
       </h1>
 
-      {/* Rust IPC */}
+      {/* ========================================================
+          Rust IPC
+      ======================================================== */}
+
       <section className="flex flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Rust IPC
@@ -325,7 +378,10 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Database */}
+      {/* ========================================================
+          Database
+      ======================================================== */}
+
       <section className="flex flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Database
@@ -343,7 +399,10 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Artists */}
+      {/* ========================================================
+          Artists
+      ======================================================== */}
+
       <section className="flex flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Artists
@@ -368,7 +427,10 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Albums */}
+      {/* ========================================================
+          Albums
+      ======================================================== */}
+
       <section className="flex flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Albums
@@ -407,7 +469,10 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Tracks */}
+      {/* ========================================================
+          Tracks
+      ======================================================== */}
+
       <section className="flex flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Tracks
@@ -446,7 +511,10 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Scanner */}
+      {/* ========================================================
+          Music Scanner
+      ======================================================== */}
+
       <section className="flex w-full max-w-3xl flex-col items-center gap-3">
         <h2 className="text-2xl font-semibold">
           Music Scanner
@@ -476,10 +544,25 @@ export default function Home() {
           Test Read Metadata
         </button>
 
+        <button
+          onClick={testContentKey}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Content Key
+        </button>
+
+        <button
+          onClick={testIndexTrack}
+          className="rounded-lg bg-white px-4 py-2 text-black"
+        >
+          Test Index Track
+        </button>
+
         <p className="w-full max-w-3xl whitespace-pre-wrap break-all">
           {scannerStatus}
         </p>
       </section>
+
     </main>
   );
 }

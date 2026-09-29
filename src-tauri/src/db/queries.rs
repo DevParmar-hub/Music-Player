@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 // ============================================================
 // Track Row
@@ -68,6 +68,37 @@ pub fn get_artists(
     Ok(artists)
 }
 
+pub fn find_or_create_artist(
+    connection: &Connection,
+    name: &str,
+) -> Result<i64, String> {
+    let existing_id = connection
+        .query_row(
+            "
+            SELECT id
+            FROM artists
+            WHERE name = ?1
+            ",
+            params![name],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    if let Some(id) = existing_id {
+        return Ok(id);
+    }
+
+    connection
+        .execute(
+            "INSERT INTO artists (name) VALUES (?1)",
+            params![name],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(connection.last_insert_rowid())
+}
+
 // ============================================================
 // Album Queries
 // ============================================================
@@ -116,6 +147,45 @@ pub fn get_albums(
         .map_err(|error| error.to_string())?;
 
     Ok(albums)
+}
+
+pub fn find_or_create_album(
+    connection: &Connection,
+    title: &str,
+    artist_id: Option<i64>,
+) -> Result<i64, String> {
+    let existing_id = connection
+        .query_row(
+            "
+            SELECT id
+            FROM albums
+            WHERE title = ?1
+              AND (
+                  artist_id = ?2
+                  OR (artist_id IS NULL AND ?2 IS NULL)
+              )
+            ",
+            params![title, artist_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    if let Some(id) = existing_id {
+        return Ok(id);
+    }
+
+    connection
+        .execute(
+            "
+            INSERT INTO albums (title, artist_id)
+            VALUES (?1, ?2)
+            ",
+            params![title, artist_id],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(connection.last_insert_rowid())
 }
 
 pub fn update_album(
@@ -223,6 +293,68 @@ pub fn insert_track(
         .map_err(|error| error.to_string())?;
 
     Ok(connection.last_insert_rowid())
+}
+
+pub fn find_track_by_content_key(
+    connection: &Connection,
+    content_key: &str,
+) -> Result<Option<TrackRow>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT
+                id,
+                content_key,
+                file_path,
+                title,
+                artist_id,
+                album_id,
+                genre,
+                track_number,
+                disc_number,
+                duration_ms,
+                date_added,
+                last_played,
+                play_count,
+                file_mtime,
+                available
+            FROM tracks
+            WHERE content_key = ?1
+            LIMIT 1;
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut rows = statement
+        .query(params![content_key])
+        .map_err(|error| error.to_string())?;
+
+    if let Some(row) = rows
+        .next()
+        .map_err(|error| error.to_string())?
+    {
+        let track = TrackRow {
+            id: row.get(0).map_err(|error| error.to_string())?,
+            content_key: row.get(1).map_err(|error| error.to_string())?,
+            file_path: row.get(2).map_err(|error| error.to_string())?,
+            title: row.get(3).map_err(|error| error.to_string())?,
+            artist_id: row.get(4).map_err(|error| error.to_string())?,
+            album_id: row.get(5).map_err(|error| error.to_string())?,
+            genre: row.get(6).map_err(|error| error.to_string())?,
+            track_number: row.get(7).map_err(|error| error.to_string())?,
+            disc_number: row.get(8).map_err(|error| error.to_string())?,
+            duration_ms: row.get(9).map_err(|error| error.to_string())?,
+            date_added: row.get(10).map_err(|error| error.to_string())?,
+            last_played: row.get(11).map_err(|error| error.to_string())?,
+            play_count: row.get(12).map_err(|error| error.to_string())?,
+            file_mtime: row.get(13).map_err(|error| error.to_string())?,
+            available: row.get(14).map_err(|error| error.to_string())?,
+        };
+
+        Ok(Some(track))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn get_tracks(

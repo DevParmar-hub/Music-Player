@@ -1,17 +1,28 @@
 mod db;
 mod metadata;
 mod scanner;
+mod content_identity;
+mod indexer;
 
 use tauri::{Manager, State};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Response from Rust.", name)
-}
+// ============================================================
+// Basic Rust Test
+// ============================================================
 
 #[tauri::command]
-fn verify_database(state: State<'_, db::Database>) -> Result<String, String> {
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+// ============================================================
+// Database Verification
+// ============================================================
+
+#[tauri::command]
+fn verify_database(
+    state: State<'_, db::Database>,
+) -> Result<String, String> {
     let connection = state
         .connection
         .lock()
@@ -23,7 +34,6 @@ fn verify_database(state: State<'_, db::Database>) -> Result<String, String> {
             SELECT name
             FROM sqlite_master
             WHERE type = 'table'
-            AND name NOT LIKE 'sqlite_%'
             ORDER BY name;
             ",
         )
@@ -36,11 +46,17 @@ fn verify_database(state: State<'_, db::Database>) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     Ok(format!(
-        "Database connected successfully\nPath: {}\nTables: {:?}",
+        "Database connected successfully\n\
+         Path: {}\n\
+         Tables: {:?}",
         state.path.display(),
         tables
     ))
 }
+
+// ============================================================
+// Music Scanner
+// ============================================================
 
 #[tauri::command]
 fn scan_music_directory(
@@ -70,16 +86,61 @@ fn scan_music_directory(
         .collect())
 }
 
+// ============================================================
+// Metadata Test
+// ============================================================
+
 #[tauri::command]
 fn test_read_metadata(
     path: String,
 ) -> Result<String, String> {
     let metadata = metadata::read_metadata(
-        std::path::Path::new(&path)
+        std::path::Path::new(&path),
     )?;
 
     Ok(format!("{:#?}", metadata))
 }
+
+// ============================================================
+// Content Key Test
+// ============================================================
+
+#[tauri::command]
+fn test_content_key(
+    path: String,
+) -> Result<String, String> {
+    content_identity::generate_content_key(
+        std::path::Path::new(&path),
+    )
+}
+
+// ============================================================
+// Library Indexer
+// ============================================================
+
+#[tauri::command]
+fn index_music_track(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<String, String> {
+    let database = app.state::<db::Database>();
+
+    let connection = database
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let result = indexer::index_track(
+        &connection,
+        std::path::Path::new(&path),
+    )?;
+
+    Ok(result)
+}
+
+// ============================================================
+// Artist Tests
+// ============================================================
 
 #[tauri::command]
 fn test_insert_artist(
@@ -91,11 +152,14 @@ fn test_insert_artist(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let artist_id = db::queries::insert_artist(&connection, &name)?;
+    let id = db::queries::insert_artist(
+        &connection,
+        &name,
+    )?;
 
     Ok(format!(
-        "Artist inserted successfully\nID: {}\nName: {}",
-        artist_id, name
+        "Artist inserted successfully with ID: {}",
+        id
     ))
 }
 
@@ -108,10 +172,15 @@ fn test_get_artists(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let artists = db::queries::get_artists(&connection)?;
+    let artists =
+        db::queries::get_artists(&connection)?;
 
-    Ok(format!("{:?}", artists))
+    Ok(format!("{:#?}", artists))
 }
+
+// ============================================================
+// Album Tests
+// ============================================================
 
 #[tauri::command]
 fn test_insert_album(
@@ -124,17 +193,15 @@ fn test_insert_album(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let album_id = db::queries::insert_album(
+    let id = db::queries::insert_album(
         &connection,
         &title,
         artist_id,
     )?;
 
     Ok(format!(
-        "Album inserted successfully\nID: {}\nTitle: {}\nArtist ID: {:?}",
-        album_id,
-        title,
-        artist_id
+        "Album inserted successfully with ID: {}",
+        id
     ))
 }
 
@@ -147,9 +214,10 @@ fn test_get_albums(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let albums = db::queries::get_albums(&connection)?;
+    let albums =
+        db::queries::get_albums(&connection)?;
 
-    Ok(format!("{:?}", albums))
+    Ok(format!("{:#?}", albums))
 }
 
 #[tauri::command]
@@ -172,10 +240,8 @@ fn test_update_album(
     )?;
 
     Ok(format!(
-        "Album updated successfully\nID: {}\nTitle: {}\nArtist ID: {:?}",
-        album_id,
-        title,
-        artist_id
+        "Album {} updated successfully",
+        album_id
     ))
 }
 
@@ -189,13 +255,20 @@ fn test_delete_album(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    db::queries::delete_album(&connection, album_id)?;
+    db::queries::delete_album(
+        &connection,
+        album_id,
+    )?;
 
     Ok(format!(
-        "Album deleted successfully\nID: {}",
+        "Album {} deleted successfully",
         album_id
     ))
 }
+
+// ============================================================
+// Track Tests
+// ============================================================
 
 #[tauri::command]
 fn test_insert_track(
@@ -217,7 +290,7 @@ fn test_insert_track(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let track_id = db::queries::insert_track(
+    let id = db::queries::insert_track(
         &connection,
         &content_key,
         &file_path,
@@ -233,10 +306,8 @@ fn test_insert_track(
     )?;
 
     Ok(format!(
-        "Track inserted successfully\nID: {}\nTitle: {}\nPath: {}",
-        track_id,
-        title,
-        file_path
+        "Track inserted successfully with ID: {}",
+        id
     ))
 }
 
@@ -249,7 +320,8 @@ fn test_get_tracks(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let tracks = db::queries::get_tracks(&connection)?;
+    let tracks =
+        db::queries::get_tracks(&connection)?;
 
     Ok(format!("{:#?}", tracks))
 }
@@ -282,10 +354,8 @@ fn test_update_track(
     )?;
 
     Ok(format!(
-        "Track updated successfully\nID: {}\nTitle: {}\nGenre: {}",
-        track_id,
-        title,
-        genre.as_deref().unwrap_or("None")
+        "Track {} updated successfully",
+        track_id
     ))
 }
 
@@ -299,48 +369,54 @@ fn test_delete_track(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    db::queries::delete_track(&connection, track_id)?;
+    db::queries::delete_track(
+        &connection,
+        track_id,
+    )?;
 
     Ok(format!(
-        "Track deleted successfully\nID: {}",
+        "Track {} deleted successfully",
         track_id
     ))
 }
 
+// ============================================================
+// Application Entry Point
+// ============================================================
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-
-            let database = db::Database::new(&app.handle())
-                .map_err(std::io::Error::other)?;
+            let database =
+                db::Database::new(&app.handle())?;
 
             app.manage(database);
 
             Ok(())
         })
-.invoke_handler(tauri::generate_handler![
-    greet,
-    verify_database,
-    scan_music_directory,
-    test_read_metadata,
-    test_insert_artist,
-    test_get_artists,
-    test_insert_album,
-    test_get_albums,
-    test_update_album,
-    test_delete_album,
-    test_insert_track,
-    test_get_tracks,
-    test_update_track,
-    test_delete_track
-])
+        .invoke_handler(
+            tauri::generate_handler![
+                greet,
+                verify_database,
+                scan_music_directory,
+                test_read_metadata,
+                test_content_key,
+                index_music_track,
+                test_insert_artist,
+                test_get_artists,
+                test_insert_album,
+                test_get_albums,
+                test_update_album,
+                test_delete_album,
+                test_insert_track,
+                test_get_tracks,
+                test_update_track,
+                test_delete_track
+            ],
+        )
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect(
+            "error while running tauri application",
+        );
 }

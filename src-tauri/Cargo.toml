@@ -25,3 +25,5 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 lofty = "0.22"
+sha2 = "0.10"
+chrono = "0.4"
