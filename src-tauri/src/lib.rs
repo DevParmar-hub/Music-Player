@@ -1,3 +1,4 @@
+
 mod db;
 mod metadata;
 mod scanner;
@@ -55,7 +56,7 @@ fn verify_database(
 }
 
 // ============================================================
-// Music Scanner
+// Music Scanner — Find Files Only
 // ============================================================
 
 #[tauri::command]
@@ -87,6 +88,63 @@ fn scan_music_directory(
 }
 
 // ============================================================
+// Music Library — Scan and Index Directory
+// ============================================================
+
+#[tauri::command]
+fn scan_and_index_music_directory(
+    state: State<'_, db::Database>,
+    path: String,
+) -> Result<String, String> {
+    let root = std::path::Path::new(&path);
+
+    if !root.exists() {
+        return Err(format!(
+            "Directory does not exist: {}",
+            path
+        ));
+    }
+
+    if !root.is_dir() {
+        return Err(format!(
+            "Path is not a directory: {}",
+            path
+        ));
+    }
+
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let summary =
+        indexer::scan_and_index_directory(&connection, root)?;
+
+    let mut result = format!(
+        "Directory indexing completed.\n\
+         Files found: {}\n\
+         Newly indexed: {}\n\
+         Already indexed: {}\n\
+         Failed: {}",
+        summary.files_found,
+        summary.indexed,
+        summary.already_indexed,
+        summary.failed,
+    );
+
+    if !summary.errors.is_empty() {
+        result.push_str("\n\nErrors:");
+
+        for error in summary.errors {
+            result.push_str("\n- ");
+            result.push_str(&error);
+        }
+    }
+
+    Ok(result)
+}
+
+// ============================================================
 // Metadata Test
 // ============================================================
 
@@ -115,7 +173,7 @@ fn test_content_key(
 }
 
 // ============================================================
-// Library Indexer
+// Library Indexer — Single Track
 // ============================================================
 
 #[tauri::command]
@@ -400,6 +458,7 @@ pub fn run() {
                 greet,
                 verify_database,
                 scan_music_directory,
+                scan_and_index_music_directory,
                 test_read_metadata,
                 test_content_key,
                 index_music_track,
