@@ -46,12 +46,44 @@ fn verify_database(
         .collect::<Result<Vec<String>, _>>()
         .map_err(|error| error.to_string())?;
 
+    drop(statement);
+
+    let schema_version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+
+    let track_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM tracks",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let track_files_count: i64 = if tables.iter().any(|name| name == "track_files") {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM track_files",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?
+    } else {
+        0
+    };
+
     Ok(format!(
         "Database connected successfully\n\
          Path: {}\n\
-         Tables: {:?}",
+         Schema version: {}\n\
+         Tables: {:?}\n\
+         Logical tracks: {}\n\
+         Registered physical files: {}",
         state.path.display(),
-        tables
+        schema_version,
+        tables,
+        track_count,
+        track_files_count,
     ))
 }
 
@@ -66,17 +98,11 @@ fn scan_music_directory(
     let root = std::path::Path::new(&path);
 
     if !root.exists() {
-        return Err(format!(
-            "Directory does not exist: {}",
-            path
-        ));
+        return Err(format!("Directory does not exist: {}", path));
     }
 
     if !root.is_dir() {
-        return Err(format!(
-            "Path is not a directory: {}",
-            path
-        ));
+        return Err(format!("Path is not a directory: {}", path));
     }
 
     let tracks = scanner::scan_directory(root)?;
@@ -99,17 +125,11 @@ fn scan_and_index_music_directory(
     let root = std::path::Path::new(&path);
 
     if !root.exists() {
-        return Err(format!(
-            "Directory does not exist: {}",
-            path
-        ));
+        return Err(format!("Directory does not exist: {}", path));
     }
 
     if !root.is_dir() {
-        return Err(format!(
-            "Path is not a directory: {}",
-            path
-        ));
+        return Err(format!("Path is not a directory: {}", path));
     }
 
     let connection = state
@@ -124,7 +144,7 @@ fn scan_and_index_music_directory(
         "Directory indexing completed.\n\
          Files found: {}\n\
          Newly indexed: {}\n\
-         Already indexed: {}\n\
+         Already indexed / duplicate files: {}\n\
          Failed: {}",
         summary.files_found,
         summary.indexed,
@@ -152,9 +172,8 @@ fn scan_and_index_music_directory(
 fn test_read_metadata(
     path: String,
 ) -> Result<String, String> {
-    let metadata = metadata::read_metadata(
-        std::path::Path::new(&path),
-    )?;
+    let metadata =
+        metadata::read_metadata(std::path::Path::new(&path))?;
 
     Ok(format!("{:#?}", metadata))
 }
@@ -188,12 +207,10 @@ fn index_music_track(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let result = indexer::index_track(
+    indexer::index_track(
         &connection,
         std::path::Path::new(&path),
-    )?;
-
-    Ok(result)
+    )
 }
 
 // ============================================================
@@ -210,10 +227,7 @@ fn test_insert_artist(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let id = db::queries::insert_artist(
-        &connection,
-        &name,
-    )?;
+    let id = db::queries::insert_artist(&connection, &name)?;
 
     Ok(format!(
         "Artist inserted successfully with ID: {}",
@@ -230,8 +244,7 @@ fn test_get_artists(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let artists =
-        db::queries::get_artists(&connection)?;
+    let artists = db::queries::get_artists(&connection)?;
 
     Ok(format!("{:#?}", artists))
 }
@@ -251,11 +264,8 @@ fn test_insert_album(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let id = db::queries::insert_album(
-        &connection,
-        &title,
-        artist_id,
-    )?;
+    let id =
+        db::queries::insert_album(&connection, &title, artist_id)?;
 
     Ok(format!(
         "Album inserted successfully with ID: {}",
@@ -272,8 +282,7 @@ fn test_get_albums(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let albums =
-        db::queries::get_albums(&connection)?;
+    let albums = db::queries::get_albums(&connection)?;
 
     Ok(format!("{:#?}", albums))
 }
@@ -297,10 +306,7 @@ fn test_update_album(
         artist_id,
     )?;
 
-    Ok(format!(
-        "Album {} updated successfully",
-        album_id
-    ))
+    Ok(format!("Album {} updated successfully", album_id))
 }
 
 #[tauri::command]
@@ -313,15 +319,9 @@ fn test_delete_album(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    db::queries::delete_album(
-        &connection,
-        album_id,
-    )?;
+    db::queries::delete_album(&connection, album_id)?;
 
-    Ok(format!(
-        "Album {} deleted successfully",
-        album_id
-    ))
+    Ok(format!("Album {} deleted successfully", album_id))
 }
 
 // ============================================================
@@ -378,8 +378,7 @@ fn test_get_tracks(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    let tracks =
-        db::queries::get_tracks(&connection)?;
+    let tracks = db::queries::get_tracks(&connection)?;
 
     Ok(format!("{:#?}", tracks))
 }
@@ -427,14 +426,52 @@ fn test_delete_track(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    db::queries::delete_track(
+    db::queries::delete_track(&connection, track_id)?;
+
+    Ok(format!("Track {} deleted successfully", track_id))
+}
+
+// ============================================================
+// Track File Tests
+// ============================================================
+
+#[tauri::command]
+fn test_get_track_files(
+    state: State<'_, db::Database>,
+    track_id: i64,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let files = db::queries::get_track_files(
+        &connection,
+        track_id,
+    )?;
+
+    Ok(format!("{:#?}", files))
+}
+
+#[tauri::command]
+fn test_count_track_files(
+    state: State<'_, db::Database>,
+    track_id: i64,
+) -> Result<String, String> {
+    let connection = state
+        .connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    let count = db::queries::count_track_files(
         &connection,
         track_id,
     )?;
 
     Ok(format!(
-        "Track {} deleted successfully",
-        track_id
+        "Track {} has {} registered physical file(s)",
+        track_id,
+        count
     ))
 }
 
@@ -446,11 +483,8 @@ fn test_delete_track(
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let database =
-                db::Database::new(&app.handle())?;
-
+            let database = db::Database::new(&app.handle())?;
             app.manage(database);
-
             Ok(())
         })
         .invoke_handler(
@@ -471,11 +505,11 @@ pub fn run() {
                 test_insert_track,
                 test_get_tracks,
                 test_update_track,
-                test_delete_track
+                test_delete_track,
+                test_get_track_files,
+                test_count_track_files
             ],
         )
         .run(tauri::generate_context!())
-        .expect(
-            "error while running tauri application",
-        );
+        .expect("error while running tauri application");
 }

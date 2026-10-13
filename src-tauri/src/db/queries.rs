@@ -1,3 +1,4 @@
+
 use rusqlite::{params, Connection, OptionalExtension};
 
 // ============================================================
@@ -21,6 +22,21 @@ pub struct TrackRow {
     pub play_count: i64,
     pub file_mtime: i64,
     pub available: i64,
+}
+
+// ============================================================
+// Track File Row
+// ============================================================
+
+/// Represents one physical file belonging to a logical track.
+#[derive(Debug)]
+pub struct TrackFileRow {
+    pub id: i64,
+    pub track_id: i64,
+    pub file_path: String,
+    pub file_mtime: i64,
+    pub available: i64,
+    pub date_added: i64,
 }
 
 // ============================================================
@@ -161,8 +177,8 @@ pub fn find_or_create_album(
             FROM albums
             WHERE title = ?1
               AND (
-                  artist_id = ?2
-                  OR (artist_id IS NULL AND ?2 IS NULL)
+                    artist_id = ?2
+                    OR (artist_id IS NULL AND ?2 IS NULL)
               )
             ",
             params![title, artist_id],
@@ -475,4 +491,104 @@ pub fn delete_track(
     }
 
     Ok(())
+}
+
+// ============================================================
+// Track File Queries
+// ============================================================
+
+/// Register a physical file path for an existing logical track.
+///
+/// Returns `true` if a new path was inserted.
+/// Returns `false` if the path is already registered.
+///
+/// The UNIQUE constraint on file_path ensures a path cannot be
+/// registered more than once.
+pub fn register_track_file(
+    connection: &Connection,
+    track_id: i64,
+    file_path: &str,
+    file_mtime: i64,
+    date_added: i64,
+) -> Result<bool, String> {
+    let rows_inserted = connection
+        .execute(
+            "
+            INSERT OR IGNORE INTO track_files (
+                track_id,
+                file_path,
+                file_mtime,
+                available,
+                date_added
+            )
+            VALUES (?1, ?2, ?3, 1, ?4)
+            ",
+            params![
+                track_id,
+                file_path,
+                file_mtime,
+                date_added
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows_inserted > 0)
+}
+
+/// Retrieve every physical file registered for a logical track.
+pub fn get_track_files(
+    connection: &Connection,
+    track_id: i64,
+) -> Result<Vec<TrackFileRow>, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT
+                id,
+                track_id,
+                file_path,
+                file_mtime,
+                available,
+                date_added
+            FROM track_files
+            WHERE track_id = ?1
+            ORDER BY file_path;
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    let files = statement
+        .query_map(params![track_id], |row| {
+            Ok(TrackFileRow {
+                id: row.get(0)?,
+                track_id: row.get(1)?,
+                file_path: row.get(2)?,
+                file_mtime: row.get(3)?,
+                available: row.get(4)?,
+                date_added: row.get(5)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<TrackFileRow>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    Ok(files)
+}
+
+/// Count the physical files registered for a logical track.
+pub fn count_track_files(
+    connection: &Connection,
+    track_id: i64,
+) -> Result<i64, String> {
+    connection
+        .query_row(
+            "
+            SELECT COUNT(*)
+            FROM track_files
+            WHERE track_id = ?1
+            ",
+            params![track_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
 }

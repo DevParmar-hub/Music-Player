@@ -1,6 +1,9 @@
+
 use rusqlite::Connection;
 
 pub fn run_migrations(connection: &Connection) -> Result<(), String> {
+    // Create the base schema if this is a new database.
+    // Existing tables and data are left intact.
     connection
         .execute_batch(
             "
@@ -51,6 +54,59 @@ pub fn run_migrations(connection: &Connection) -> Result<(), String> {
             ",
         )
         .map_err(|error| error.to_string())?;
+
+    // Migration 1: track_files
+    let version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+
+    if version < 1 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE IF NOT EXISTS track_files (
+                    id INTEGER PRIMARY KEY,
+                    track_id INTEGER NOT NULL
+                        REFERENCES tracks(id)
+                        ON DELETE CASCADE,
+                    file_path TEXT NOT NULL UNIQUE,
+                    file_mtime INTEGER NOT NULL,
+                    available INTEGER NOT NULL DEFAULT 1,
+                    date_added INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_track_files_track_id
+                    ON track_files(track_id);
+
+                INSERT OR IGNORE INTO track_files (
+                    track_id,
+                    file_path,
+                    file_mtime,
+                    available,
+                    date_added
+                )
+                SELECT
+                    id,
+                    file_path,
+                    file_mtime,
+                    available,
+                    date_added
+                FROM tracks;
+
+                PRAGMA user_version = 1;
+
+                COMMIT;
+                ",
+            )
+            .map_err(|error| {
+                // If the migration failed before COMMIT, roll back
+                // its schema and data changes.
+                let _ = connection.execute_batch("ROLLBACK;");
+                error.to_string()
+            })?;
+    }
 
     Ok(())
 }
