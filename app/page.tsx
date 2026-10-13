@@ -277,18 +277,23 @@ export default function Home() {
   // Content Identity
   // ============================================================
 
-  async function testContentKey() {
-    try {
-      const response = await invoke<string>('test_content_key', {
-        path: 'C:\\Users\\ACER\\Music\\test.mp3',
-      });
-      setScannerStatus(`Content Key:\n${response}`);
-    } catch (error) {
-      setScannerStatus(
-        `Content key generation failed: ${String(error)}`
-      );
-    }
+ async function testContentKey() {
+  try {
+    const path =
+      'C:\\Users\\ACER\\Music\\ParadiseCircus(Zeds Dead).mpeg';
+
+    const response = await invoke<string>(
+      'test_content_key',
+      { path }
+    );
+
+    setScannerStatus(`Content Key:\n${response}`);
+  } catch (error) {
+    setScannerStatus(
+      `Content key generation failed: ${String(error)}`
+    );
   }
+}
 
   // ============================================================
   // Library Indexer — Single Track
