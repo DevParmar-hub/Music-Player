@@ -108,5 +108,40 @@ pub fn run_migrations(connection: &Connection) -> Result<(), String> {
             })?;
     }
 
+    // Migration 2: per-file content identity
+    //
+    // Duplicate detection now works on physical files. Each file
+    // stores its own partial content key and, once computed, its
+    // full-file SHA-256, so re-scans do not re-hash candidates.
+    if version < 2 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+
+                ALTER TABLE track_files ADD COLUMN content_key TEXT;
+                ALTER TABLE track_files ADD COLUMN full_hash TEXT;
+
+                UPDATE track_files
+                SET content_key = (
+                    SELECT tracks.content_key
+                    FROM tracks
+                    WHERE tracks.id = track_files.track_id
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_track_files_content_key
+                    ON track_files(content_key);
+
+                PRAGMA user_version = 2;
+
+                COMMIT;
+                ",
+            )
+            .map_err(|error| {
+                let _ = connection.execute_batch("ROLLBACK;");
+                error.to_string()
+            })?;
+    }
+
     Ok(())
 }

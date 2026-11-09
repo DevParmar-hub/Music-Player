@@ -37,6 +37,8 @@ pub struct TrackFileRow {
     pub file_mtime: i64,
     pub available: i64,
     pub date_added: i64,
+    pub content_key: Option<String>,
+    pub full_hash: Option<String>,
 }
 
 // ============================================================
@@ -497,6 +499,30 @@ pub fn delete_track(
 // Track File Queries
 // ============================================================
 
+const TRACK_FILE_COLUMNS: &str = "
+    id,
+    track_id,
+    file_path,
+    file_mtime,
+    available,
+    date_added,
+    content_key,
+    full_hash
+";
+
+fn map_track_file_row(row: &rusqlite::Row) -> rusqlite::Result<TrackFileRow> {
+    Ok(TrackFileRow {
+        id: row.get(0)?,
+        track_id: row.get(1)?,
+        file_path: row.get(2)?,
+        file_mtime: row.get(3)?,
+        available: row.get(4)?,
+        date_added: row.get(5)?,
+        content_key: row.get(6)?,
+        full_hash: row.get(7)?,
+    })
+}
+
 /// Register a physical file path for an existing logical track.
 ///
 /// Returns `true` if a new path was inserted.
@@ -510,6 +536,8 @@ pub fn register_track_file(
     file_path: &str,
     file_mtime: i64,
     date_added: i64,
+    content_key: &str,
+    full_hash: Option<&str>,
 ) -> Result<bool, String> {
     let rows_inserted = connection
         .execute(
@@ -519,15 +547,19 @@ pub fn register_track_file(
                 file_path,
                 file_mtime,
                 available,
-                date_added
+                date_added,
+                content_key,
+                full_hash
             )
-            VALUES (?1, ?2, ?3, 1, ?4)
+            VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)
             ",
             params![
                 track_id,
                 file_path,
                 file_mtime,
-                date_added
+                date_added,
+                content_key,
+                full_hash
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -541,38 +573,133 @@ pub fn get_track_files(
     track_id: i64,
 ) -> Result<Vec<TrackFileRow>, String> {
     let mut statement = connection
-        .prepare(
+        .prepare(&format!(
             "
-            SELECT
-                id,
-                track_id,
-                file_path,
-                file_mtime,
-                available,
-                date_added
+            SELECT {TRACK_FILE_COLUMNS}
             FROM track_files
             WHERE track_id = ?1
             ORDER BY file_path;
-            ",
-        )
+            "
+        ))
         .map_err(|error| error.to_string())?;
 
     let files = statement
-        .query_map(params![track_id], |row| {
-            Ok(TrackFileRow {
-                id: row.get(0)?,
-                track_id: row.get(1)?,
-                file_path: row.get(2)?,
-                file_mtime: row.get(3)?,
-                available: row.get(4)?,
-                date_added: row.get(5)?,
-            })
-        })
+        .query_map(params![track_id], map_track_file_row)
         .map_err(|error| error.to_string())?
         .collect::<Result<Vec<TrackFileRow>, _>>()
         .map_err(|error| error.to_string())?;
 
     Ok(files)
+}
+
+/// Look up a registered physical file by its exact path.
+pub fn find_track_file_by_path(
+    connection: &Connection,
+    file_path: &str,
+) -> Result<Option<TrackFileRow>, String> {
+    connection
+        .query_row(
+            &format!(
+                "
+                SELECT {TRACK_FILE_COLUMNS}
+                FROM track_files
+                WHERE file_path = ?1
+                "
+            ),
+            params![file_path],
+            map_track_file_row,
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+/// Retrieve every physical file sharing a partial content key.
+/// These are the duplicate candidates for a newly scanned file.
+pub fn find_track_files_by_content_key(
+    connection: &Connection,
+    content_key: &str,
+) -> Result<Vec<TrackFileRow>, String> {
+    let mut statement = connection
+        .prepare(&format!(
+            "
+            SELECT {TRACK_FILE_COLUMNS}
+            FROM track_files
+            WHERE content_key = ?1
+            ORDER BY id;
+            "
+        ))
+        .map_err(|error| error.to_string())?;
+
+    let files = statement
+        .query_map(params![content_key], map_track_file_row)
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<TrackFileRow>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    Ok(files)
+}
+
+/// Store a lazily computed full-file hash for a registered file.
+pub fn set_track_file_hash(
+    connection: &Connection,
+    track_file_id: i64,
+    full_hash: &str,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "UPDATE track_files SET full_hash = ?1 WHERE id = ?2",
+            params![full_hash, track_file_id],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+/// Record new content identity for a file that changed on disk.
+///
+/// The legacy tracks.file_mtime / tracks.content_key columns are
+/// kept in sync when this file is the track's primary file.
+pub fn update_track_file_identity(
+    connection: &Connection,
+    track_file: &TrackFileRow,
+    file_mtime: i64,
+    content_key: &str,
+    full_hash: &str,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "
+            UPDATE track_files
+            SET file_mtime = ?1,
+                content_key = ?2,
+                full_hash = ?3,
+                available = 1
+            WHERE id = ?4
+            ",
+            params![file_mtime, content_key, full_hash, track_file.id],
+        )
+        .map_err(|error| error.to_string())?;
+
+    connection
+        .execute(
+            "
+            UPDATE tracks
+            SET file_mtime = ?1,
+                content_key = ?2,
+                available = 1
+            WHERE id = ?3
+              AND file_path = ?4
+            ",
+            params![
+                file_mtime,
+                content_key,
+                track_file.track_id,
+                track_file.file_path
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 /// Count the physical files registered for a logical track.

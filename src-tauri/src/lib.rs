@@ -145,10 +145,12 @@ fn scan_and_index_music_directory(
          Files found: {}\n\
          Newly indexed: {}\n\
          Already indexed / duplicate files: {}\n\
+         Updated (changed on disk): {}\n\
          Failed: {}",
         summary.files_found,
         summary.indexed,
         summary.already_indexed,
+        summary.updated,
         summary.failed,
     );
 
@@ -207,10 +209,10 @@ fn index_music_track(
         .lock()
         .map_err(|error| error.to_string())?;
 
-    indexer::index_track(
-        &connection,
-        std::path::Path::new(&path),
-    )
+    let path = std::path::Path::new(&path);
+
+    indexer::index_track(&connection, path)
+        .map(|outcome| outcome.describe(path))
 }
 
 // ============================================================

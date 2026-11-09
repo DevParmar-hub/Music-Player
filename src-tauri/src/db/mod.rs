@@ -1,4 +1,4 @@
-mod migrations;
+pub(crate) mod migrations;
 pub mod queries;
 use std::fs;
 use std::path::PathBuf;
