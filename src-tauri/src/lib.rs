@@ -146,11 +146,13 @@ fn scan_and_index_music_directory(
          Newly indexed: {}\n\
          Already indexed / duplicate files: {}\n\
          Updated (changed on disk): {}\n\
+         Marked unavailable: {}\n\
          Failed: {}",
         summary.files_found,
         summary.indexed,
         summary.already_indexed,
         summary.updated,
+        summary.unavailable,
         summary.failed,
     );
 
@@ -249,6 +251,18 @@ fn test_get_artists(
     let artists = db::queries::get_artists(&connection)?;
 
     Ok(format!("{:#?}", artists))
+}
+
+#[tauri::command]
+fn update_artist(state: State<'_, db::Database>, artist_id: i64, name: String) -> Result<(), String> {
+    let connection = state.connection.lock().map_err(|error| error.to_string())?;
+    db::queries::update_artist(&connection, artist_id, &name)
+}
+
+#[tauri::command]
+fn delete_artist(state: State<'_, db::Database>, artist_id: i64) -> Result<(), String> {
+    let connection = state.connection.lock().map_err(|error| error.to_string())?;
+    db::queries::delete_artist(&connection, artist_id)
 }
 
 // ============================================================
@@ -477,6 +491,21 @@ fn test_count_track_files(
     ))
 }
 
+#[tauri::command]
+fn update_track_file(
+    state: State<'_, db::Database>, file_id: i64, file_path: String,
+    file_mtime: i64, available: bool,
+) -> Result<(), String> {
+    let connection = state.connection.lock().map_err(|error| error.to_string())?;
+    db::queries::update_track_file(&connection, file_id, &file_path, file_mtime, available)
+}
+
+#[tauri::command]
+fn delete_track_file(state: State<'_, db::Database>, file_id: i64) -> Result<(), String> {
+    let connection = state.connection.lock().map_err(|error| error.to_string())?;
+    db::queries::delete_track_file(&connection, file_id)
+}
+
 // ============================================================
 // Application Entry Point
 // ============================================================
@@ -500,6 +529,8 @@ pub fn run() {
                 index_music_track,
                 test_insert_artist,
                 test_get_artists,
+                update_artist,
+                delete_artist,
                 test_insert_album,
                 test_get_albums,
                 test_update_album,
@@ -510,6 +541,8 @@ pub fn run() {
                 test_delete_track,
                 test_get_track_files,
                 test_count_track_files
+                ,update_track_file,
+                delete_track_file
             ],
         )
         .run(tauri::generate_context!())

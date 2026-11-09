@@ -86,6 +86,22 @@ pub fn get_artists(
     Ok(artists)
 }
 
+pub fn update_artist(connection: &Connection, artist_id: i64, name: &str) -> Result<(), String> {
+    let changed = connection.execute(
+        "UPDATE artists SET name = ?1 WHERE id = ?2",
+        params![name.trim(), artist_id],
+    ).map_err(|error| error.to_string())?;
+    if changed == 0 { return Err(format!("Artist with ID {} was not found", artist_id)); }
+    Ok(())
+}
+
+pub fn delete_artist(connection: &Connection, artist_id: i64) -> Result<(), String> {
+    let changed = connection.execute("DELETE FROM artists WHERE id = ?1", params![artist_id])
+        .map_err(|error| error.to_string())?;
+    if changed == 0 { return Err(format!("Artist with ID {} was not found", artist_id)); }
+    Ok(())
+}
+
 pub fn find_or_create_artist(
     connection: &Connection,
     name: &str,
@@ -565,6 +581,87 @@ pub fn register_track_file(
         .map_err(|error| error.to_string())?;
 
     Ok(rows_inserted > 0)
+}
+
+/// Update a registered physical file's path or availability metadata.
+pub fn update_track_file(
+    connection: &Connection,
+    file_id: i64,
+    file_path: &str,
+    file_mtime: i64,
+    available: bool,
+) -> Result<(), String> {
+    let existing: Option<(i64, String)> = connection.query_row(
+        "SELECT track_id, file_path FROM track_files WHERE id = ?1",
+        params![file_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(|error| error.to_string())?;
+    let Some((track_id, old_path)) = existing else {
+        return Err(format!("Physical file with ID {} was not found", file_id));
+    };
+    let changed = connection.execute(
+        "UPDATE track_files SET file_path = ?1, file_mtime = ?2, available = ?3 WHERE id = ?4",
+        params![file_path, file_mtime, available as i64, file_id],
+    ).map_err(|error| error.to_string())?;
+    if changed == 0 { return Err(format!("Physical file with ID {} was not found", file_id)); }
+    connection.execute(
+        "UPDATE tracks SET file_path = ?1, file_mtime = ?2, available = ?3 WHERE id = ?4 AND file_path = ?5",
+        params![file_path, file_mtime, available as i64, track_id, old_path],
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Remove a physical-file record and refresh its logical track availability.
+pub fn delete_track_file(connection: &Connection, file_id: i64) -> Result<(), String> {
+    let track_id: Option<i64> = connection.query_row(
+        "SELECT track_id FROM track_files WHERE id = ?1", params![file_id], |row| row.get(0),
+    ).optional().map_err(|error| error.to_string())?;
+    let Some(track_id) = track_id else { return Err(format!("Physical file with ID {} was not found", file_id)); };
+    connection.execute("DELETE FROM track_files WHERE id = ?1", params![file_id])
+        .map_err(|error| error.to_string())?;
+    connection.execute(
+        "UPDATE tracks SET
+            available = EXISTS(SELECT 1 FROM track_files WHERE track_id = tracks.id AND available = 1),
+            file_path = COALESCE((SELECT file_path FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), file_path),
+            file_mtime = COALESCE((SELECT file_mtime FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), file_mtime),
+            content_key = COALESCE((SELECT content_key FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), content_key)
+         WHERE id = ?1",
+        params![track_id],
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// Mark files under a scanned root as unavailable when they were not found.
+/// Records are retained so an unplugged drive or temporary outage is recoverable.
+pub fn reconcile_scan_paths(
+    connection: &Connection,
+    root: &str,
+    found_paths: &[String],
+) -> Result<usize, String> {
+    let tx = connection.unchecked_transaction().map_err(|error| error.to_string())?;
+    let prefix = if root.ends_with(std::path::MAIN_SEPARATOR) { root.to_owned() } else { format!("{}{}", root, std::path::MAIN_SEPARATOR) };
+    let mut statement = tx.prepare("SELECT id, file_path FROM track_files WHERE file_path = ?1 OR file_path LIKE ?2")
+        .map_err(|error| error.to_string())?;
+    let rows = statement.query_map(params![root, format!("{}%", prefix)], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|error| error.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())?;
+    drop(statement);
+    let found: std::collections::HashSet<&str> = found_paths.iter().map(String::as_str).collect();
+    let mut changed = 0;
+    for (id, path) in rows {
+        let available = found.contains(path.as_str());
+        changed += tx.execute("UPDATE track_files SET available = ?1 WHERE id = ?2 AND available != ?1", params![available as i64, id]).map_err(|error| error.to_string())?;
+    }
+    tx.execute(
+        "UPDATE tracks SET
+            available = EXISTS(SELECT 1 FROM track_files WHERE track_id = tracks.id AND available = 1),
+            file_path = COALESCE((SELECT file_path FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), file_path),
+            file_mtime = COALESCE((SELECT file_mtime FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), file_mtime),
+            content_key = COALESCE((SELECT content_key FROM track_files WHERE track_id = tracks.id AND available = 1 ORDER BY id LIMIT 1), content_key)",
+        [],
+    )
+        .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(changed)
 }
 
 /// Retrieve every physical file registered for a logical track.

@@ -12,6 +12,7 @@ use crate::db::queries::{
     find_track_files_by_content_key,
     insert_track,
     register_track_file,
+    reconcile_scan_paths,
     set_track_file_hash,
     update_track,
     update_track_file_identity,
@@ -75,6 +76,7 @@ pub struct ScanSummary {
     pub updated: usize,
     pub failed: usize,
     pub errors: Vec<String>,
+    pub unavailable: usize,
 }
 
 // ============================================================
@@ -401,7 +403,10 @@ pub fn scan_and_index_directory(
         updated: 0,
         failed: 0,
         errors: Vec::new(),
+        unavailable: 0,
     };
+
+    let found_paths: Vec<String> = files.iter().map(|path| path.to_string_lossy().into_owned()).collect();
 
     for path in files {
         match index_track(connection, &path) {
@@ -422,6 +427,12 @@ pub fn scan_and_index_directory(
             }
         }
     }
+
+    summary.unavailable = reconcile_scan_paths(
+        connection,
+        &root.to_string_lossy(),
+        &found_paths,
+    )?;
 
     Ok(summary)
 }
