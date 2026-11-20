@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
+use crate::artwork::{find_folder_artwork, ArtworkCache};
 use crate::content_identity::generate_content_key;
 use crate::db::queries::{
     find_or_create_album,
@@ -14,7 +15,9 @@ use crate::db::queries::{
     register_track_file,
     reconcile_scan_paths,
     set_track_file_hash,
+    track_needs_extras,
     update_track,
+    update_track_extras,
     update_track_file_identity,
     TrackFileRow,
 };
@@ -25,7 +28,11 @@ use crate::metadata::{read_metadata, TrackMetadata};
 // ============================================================
 
 /// What indexing a single file did to the library.
+///
+/// The track IDs are only read by tests today; the folder watcher
+/// will use them to refresh individual tracks.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum IndexOutcome {
     /// A new logical track was created for this file.
     Inserted { track_id: i64 },
@@ -39,36 +46,11 @@ pub enum IndexOutcome {
     Updated { track_id: i64 },
 }
 
-impl IndexOutcome {
-    pub fn describe(&self, path: &Path) -> String {
-        match self {
-            Self::Inserted { track_id } => format!(
-                "Track inserted successfully with ID: {}",
-                track_id
-            ),
-            Self::DuplicateRegistered { track_id } => format!(
-                "Duplicate file registered for track ID {}: {}",
-                track_id,
-                path.display()
-            ),
-            Self::Unchanged => format!(
-                "Track already indexed: {}",
-                path.display()
-            ),
-            Self::Updated { track_id } => format!(
-                "Track {} updated from changed file: {}",
-                track_id,
-                path.display()
-            ),
-        }
-    }
-}
-
 // ============================================================
 // Scan Summary
 // ============================================================
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ScanSummary {
     pub files_found: usize,
     pub indexed: usize,
@@ -77,6 +59,14 @@ pub struct ScanSummary {
     pub failed: usize,
     pub errors: Vec<String>,
     pub unavailable: usize,
+    /// The scan stopped early; availability was not reconciled.
+    pub cancelled: bool,
+}
+
+impl ScanSummary {
+    pub fn processed(&self) -> usize {
+        self.indexed + self.already_indexed + self.updated + self.failed
+    }
 }
 
 // ============================================================
@@ -168,6 +158,39 @@ fn resolve_artist_and_album(
     Ok((artist_id, album_id))
 }
 
+/// Store the track's year and cover art.
+///
+/// Without an artwork cache (unit tests) only the year is written and
+/// the artwork stays unchecked. Unreadable artwork is logged and
+/// recorded as "no artwork" rather than failing the file.
+fn store_track_extras(
+    connection: &Connection,
+    track_id: i64,
+    path: &Path,
+    metadata: &TrackMetadata,
+    artwork: Option<&ArtworkCache>,
+) -> Result<(), String> {
+    let year = metadata.year.map(|value| value as i64);
+
+    let artwork_hash = artwork.map(|cache| {
+        let bytes = metadata
+            .picture
+            .clone()
+            .or_else(|| find_folder_artwork(path));
+
+        match bytes.map(|bytes| cache.store(&bytes)) {
+            Some(Ok(hash)) => hash,
+            Some(Err(error)) => {
+                log::warn!("Artwork for '{}' skipped: {}", path.display(), error);
+                String::new()
+            }
+            None => String::new(),
+        }
+    });
+
+    update_track_extras(connection, track_id, year, artwork_hash.as_deref())
+}
+
 // ============================================================
 // Find a Matching Physical File
 // ============================================================
@@ -245,12 +268,13 @@ fn candidate_full_hash(
 pub fn index_track(
     connection: &Connection,
     path: &Path,
+    artwork: Option<&ArtworkCache>,
 ) -> Result<IndexOutcome, String> {
     let transaction = connection
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
 
-    let outcome = index_track_inner(&transaction, path)?;
+    let outcome = index_track_inner(&transaction, path, artwork)?;
 
     transaction.commit().map_err(|error| error.to_string())?;
 
@@ -260,6 +284,7 @@ pub fn index_track(
 fn index_track_inner(
     connection: &Connection,
     path: &Path,
+    artwork: Option<&ArtworkCache>,
 ) -> Result<IndexOutcome, String> {
     let file_path = path.to_string_lossy().into_owned();
     let file_mtime = get_file_mtime(path)?;
@@ -268,10 +293,16 @@ fn index_track_inner(
     // no hashing or tag reading at all.
     if let Some(existing) = find_track_file_by_path(connection, &file_path)? {
         if existing.file_mtime == file_mtime {
+            // Tracks indexed before artwork support get it once.
+            if artwork.is_some() && track_needs_extras(connection, existing.track_id)? {
+                let metadata = read_metadata(path)?;
+                store_track_extras(connection, existing.track_id, path, &metadata, artwork)?;
+            }
+
             return Ok(IndexOutcome::Unchanged);
         }
 
-        return refresh_changed_file(connection, path, &existing, file_mtime);
+        return refresh_changed_file(connection, path, &existing, file_mtime, artwork);
     }
 
     let content_key = generate_content_key(path)?;
@@ -330,6 +361,8 @@ fn index_track_inner(
         full_hash.as_deref(),
     )?;
 
+    store_track_extras(connection, track_id, path, &metadata, artwork)?;
+
     Ok(IndexOutcome::Inserted { track_id })
 }
 
@@ -342,6 +375,7 @@ fn refresh_changed_file(
     path: &Path,
     existing: &TrackFileRow,
     file_mtime: i64,
+    artwork: Option<&ArtworkCache>,
 ) -> Result<IndexOutcome, String> {
     let content_key = generate_content_key(path)?;
     let full_hash = generate_full_file_hash(path)?;
@@ -381,6 +415,8 @@ fn refresh_changed_file(
         &full_hash,
     )?;
 
+    store_track_extras(connection, existing.track_id, path, &metadata, artwork)?;
+
     Ok(IndexOutcome::Updated {
         track_id: existing.track_id,
     })
@@ -390,26 +426,33 @@ fn refresh_changed_file(
 // Scan and Index an Entire Directory
 // ============================================================
 
+/// Index every audio file under `root`.
+///
+/// `on_progress` is called after each file with the file just handled
+/// and the running summary; returning `false` cancels the scan. A
+/// cancelled scan skips reconciliation, so files it never reached are
+/// not wrongly marked unavailable.
 pub fn scan_and_index_directory(
     connection: &Connection,
     root: &Path,
+    artwork: Option<&ArtworkCache>,
+    mut on_progress: impl FnMut(&Path, &ScanSummary) -> bool,
 ) -> Result<ScanSummary, String> {
-    let files = crate::scanner::scan_directory(root)?;
+    let scan = crate::scanner::scan_directory(root)?;
+    let files = scan.files;
 
     let mut summary = ScanSummary {
         files_found: files.len(),
-        indexed: 0,
-        already_indexed: 0,
-        updated: 0,
-        failed: 0,
-        errors: Vec::new(),
-        unavailable: 0,
+        errors: scan.errors,
+        ..ScanSummary::default()
     };
 
     let found_paths: Vec<String> = files.iter().map(|path| path.to_string_lossy().into_owned()).collect();
 
     for path in files {
-        match index_track(connection, &path) {
+        let outcome = index_track(connection, &path, artwork);
+
+        match outcome {
             Ok(IndexOutcome::Inserted { .. }) => summary.indexed += 1,
 
             Ok(IndexOutcome::DuplicateRegistered { .. })
@@ -425,6 +468,11 @@ pub fn scan_and_index_directory(
                     error
                 ));
             }
+        }
+
+        if !on_progress(&path, &summary) {
+            summary.cancelled = true;
+            return Ok(summary);
         }
     }
 
@@ -511,11 +559,11 @@ mod tests {
         write_wav(&path, 3);
 
         assert!(matches!(
-            index_track(&connection, &path).unwrap(),
+            index_track(&connection, &path, None).unwrap(),
             IndexOutcome::Inserted { .. }
         ));
         assert!(matches!(
-            index_track(&connection, &path).unwrap(),
+            index_track(&connection, &path, None).unwrap(),
             IndexOutcome::Unchanged
         ));
         assert_eq!(count(&connection, "tracks"), 1);
@@ -532,13 +580,13 @@ mod tests {
         std::fs::copy(&original, &copy).unwrap();
 
         let IndexOutcome::Inserted { track_id } =
-            index_track(&connection, &original).unwrap()
+            index_track(&connection, &original, None).unwrap()
         else {
             panic!("expected insert");
         };
 
         assert!(matches!(
-            index_track(&connection, &copy).unwrap(),
+            index_track(&connection, &copy, None).unwrap(),
             IndexOutcome::DuplicateRegistered { track_id: id } if id == track_id
         ));
         assert_eq!(count(&connection, "tracks"), 1);
@@ -560,9 +608,9 @@ mod tests {
         write_wav(&first, 5);
         write_wav(&second, 7);
 
-        index_track(&connection, &first).unwrap();
+        index_track(&connection, &first, None).unwrap();
         assert!(matches!(
-            index_track(&connection, &second).unwrap(),
+            index_track(&connection, &second, None).unwrap(),
             IndexOutcome::Inserted { .. }
         ));
         assert_eq!(count(&connection, "tracks"), 2);
@@ -575,7 +623,7 @@ mod tests {
         write_wav(&path, 3);
 
         let IndexOutcome::Inserted { track_id } =
-            index_track(&connection, &path).unwrap()
+            index_track(&connection, &path, None).unwrap()
         else {
             panic!("expected insert");
         };
@@ -584,11 +632,11 @@ mod tests {
         bump_mtime(&path);
 
         assert!(matches!(
-            index_track(&connection, &path).unwrap(),
+            index_track(&connection, &path, None).unwrap(),
             IndexOutcome::Updated { track_id: id } if id == track_id
         ));
         assert!(matches!(
-            index_track(&connection, &path).unwrap(),
+            index_track(&connection, &path, None).unwrap(),
             IndexOutcome::Unchanged
         ));
         assert_eq!(count(&connection, "tracks"), 1);
@@ -604,16 +652,92 @@ mod tests {
         write_wav(&path, 3);
         std::fs::copy(&path, &copy).unwrap();
 
-        index_track(&connection, &path).unwrap();
+        index_track(&connection, &path, None).unwrap();
         // Force the full hash to be stored for `path`.
-        index_track(&connection, &copy).unwrap();
+        index_track(&connection, &copy, None).unwrap();
 
         bump_mtime(&path);
 
         assert!(matches!(
-            index_track(&connection, &path).unwrap(),
+            index_track(&connection, &path, None).unwrap(),
             IndexOutcome::Unchanged
         ));
+    }
+
+    /// Write a tiny PNG that the artwork cache can decode.
+    fn write_png(path: &Path) {
+        image::RgbImage::from_pixel(4, 4, image::Rgb([0, 207, 196]))
+            .save(path)
+            .unwrap();
+    }
+
+    fn artwork_hash(connection: &Connection, path: &Path) -> Option<String> {
+        connection
+            .query_row(
+                "SELECT artwork_hash FROM tracks WHERE file_path = ?1",
+                [path.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn folder_artwork_is_cached_for_new_tracks() {
+        let connection = open_test_database();
+        let directory = test_directory("artwork");
+        let path = directory.join("song.wav");
+        write_wav(&path, 3);
+        write_png(&directory.join("Cover.PNG"));
+
+        let cache = ArtworkCache::new(directory.join("cache")).unwrap();
+        index_track(&connection, &path, Some(&cache)).unwrap();
+
+        let hash = artwork_hash(&connection, &path).unwrap();
+        assert!(!hash.is_empty());
+        assert!(cache.directory().join(format!("{hash}.jpg")).is_file());
+        assert!(cache.directory().join(format!("{hash}-thumb.jpg")).is_file());
+    }
+
+    #[test]
+    fn tracks_indexed_without_artwork_are_backfilled_once() {
+        let connection = open_test_database();
+        let directory = test_directory("backfill");
+        let path = directory.join("song.wav");
+        write_wav(&path, 3);
+
+        // Indexed by an older version: artwork never looked for.
+        index_track(&connection, &path, None).unwrap();
+        assert_eq!(artwork_hash(&connection, &path), None);
+
+        let cache = ArtworkCache::new(directory.join("cache")).unwrap();
+        index_track(&connection, &path, Some(&cache)).unwrap();
+
+        // Looked for and none found.
+        assert_eq!(artwork_hash(&connection, &path), Some(String::new()));
+    }
+
+    #[test]
+    fn cancelled_scan_does_not_mark_unreached_files_unavailable() {
+        let connection = open_test_database();
+        let directory = test_directory("cancel");
+        for (index, name) in ["a.wav", "b.wav", "c.wav"].iter().enumerate() {
+            write_wav(&directory.join(name), index as i16 + 2);
+        }
+
+        scan_and_index_directory(&connection, &directory, None, |_, _| true).unwrap();
+        assert_eq!(count(&connection, "track_files"), 3);
+
+        // Stop after the first file.
+        let summary =
+            scan_and_index_directory(&connection, &directory, None, |_, _| false).unwrap();
+
+        assert!(summary.cancelled);
+        assert_eq!(summary.processed(), 1);
+
+        let unavailable: i64 = connection
+            .query_row("SELECT COUNT(*) FROM track_files WHERE available = 0", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(unavailable, 0);
     }
 
     #[test]
@@ -624,6 +748,6 @@ mod tests {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 }

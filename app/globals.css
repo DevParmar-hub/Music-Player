@@ -1,26 +1,215 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Theme is chosen by data-theme on <html> (set before first paint by
+   the script in layout.tsx), not by the OS media query alone. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ============================================================
+   Brand scales
+   ============================================================
+   Generated in OKLCH from #00cfc4 and #ff6a96, keeping each hue
+   fixed. They replace Tailwind's default teal and pink. */
+
+@theme {
+  --color-teal-50: #e6fcfa;
+  --color-teal-100: #d1f8f3;
+  --color-teal-200: #aef0e9;
+  --color-teal-300: #83e5dc;
+  --color-teal-400: #4edbd1;
+  --color-teal-500: #00cfc4;
+  --color-teal-600: #02a89f;
+  --color-teal-700: #03837c;
+  --color-teal-800: #065c57;
+  --color-teal-900: #033c38;
+  --color-teal-950: #00201e;
+
+  --color-pink-50: #fef4f6;
+  --color-pink-100: #ffe8ec;
+  --color-pink-200: #ffd5dd;
+  --color-pink-300: #ffbcca;
+  --color-pink-400: #fe97b0;
+  --color-pink-500: #ff6a96;
+  --color-pink-600: #e25f85;
+  --color-pink-700: #b54567;
+  --color-pink-800: #812f48;
+  --color-pink-900: #541d2d;
+  --color-pink-950: #2f0e17;
+
+  /* Blue-tinted neutrals: never pure black or white. */
+  --color-ink-50: #f3f8fa;
+  --color-ink-100: #ecf1f3;
+  --color-ink-200: #dfe4e6;
+  --color-ink-300: #c7cbcd;
+  --color-ink-400: #96a0a5;
+  --color-ink-500: #6d767a;
+  --color-ink-600: #4e575b;
+  --color-ink-700: #363f42;
+  --color-ink-800: #20282b;
+  --color-ink-850: #151d20;
+  --color-ink-900: #0e1518;
+  --color-ink-925: #081013;
+  --color-ink-950: #040a0d;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* ============================================================
+   Semantic tokens
+   ============================================================
+   Components use these, never raw scale steps, so both themes
+   follow the same rules:
+   - accent (teal) = interactive: progress, focus, primary actions
+   - love (pink)   = emotional: likes, now-playing, highlights
+   - *-text variants are the shades that pass contrast as text. */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-love: var(--love);
+  --color-love-text: var(--love-text);
+  --color-love-soft: var(--love-soft);
+  --color-ring: var(--ring);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-instrument-serif);
+
+  --shadow-float: var(--shadow-float);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: var(--color-ink-925);
+  --surface: var(--color-ink-900);
+  --surface-2: var(--color-ink-850);
+  --surface-3: var(--color-ink-800);
+  --border: rgb(255 255 255 / 0.07);
+  --border-strong: rgb(255 255 255 / 0.13);
+  --fg: var(--color-ink-100);
+  --fg-muted: var(--color-ink-400);
+  --fg-subtle: var(--color-ink-500);
+
+  --accent: var(--color-teal-500);
+  --accent-hover: var(--color-teal-400);
+  --accent-fg: var(--color-ink-950);
+  --accent-text: var(--color-teal-400);
+  --accent-soft: color-mix(in oklab, var(--color-teal-500) 13%, transparent);
+
+  --love: var(--color-pink-500);
+  --love-text: var(--color-pink-400);
+  --love-soft: color-mix(in oklab, var(--color-pink-500) 13%, transparent);
+
+  --ring: var(--color-teal-400);
+  --shadow-float: 0 18px 40px -16px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.3);
+
+  /* The "light from the music" glow behind everything. */
+  --glow-a: color-mix(in oklab, var(--color-teal-500) 7%, transparent);
+  --glow-b: color-mix(in oklab, var(--color-pink-500) 5%, transparent);
+  --grain-opacity: 0.05;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: var(--color-ink-50);
+  --surface: #ffffff;
+  --surface-2: var(--color-ink-100);
+  --surface-3: var(--color-ink-200);
+  --border: rgb(4 10 13 / 0.08);
+  --border-strong: rgb(4 10 13 / 0.15);
+  --fg: var(--color-ink-900);
+  --fg-muted: var(--color-ink-600);
+  --fg-subtle: var(--color-ink-500);
+
+  /* Bright teal stays a fill (with dark text on it); text and thin
+     lines use the darker shades, which pass contrast on white. */
+  --accent: var(--color-teal-500);
+  --accent-hover: var(--color-teal-400);
+  --accent-fg: var(--color-ink-950);
+  --accent-text: var(--color-teal-700);
+  --accent-soft: color-mix(in oklab, var(--color-teal-500) 11%, transparent);
+
+  --love: var(--color-pink-500);
+  --love-text: var(--color-pink-700);
+  --love-soft: color-mix(in oklab, var(--color-pink-500) 11%, transparent);
+
+  --ring: var(--color-teal-600);
+  --shadow-float: 0 18px 40px -18px rgb(4 10 13 / 0.25), 0 2px 6px rgb(4 10 13 / 0.06);
+
+  --glow-a: color-mix(in oklab, var(--color-teal-500) 9%, transparent);
+  --glow-b: color-mix(in oklab, var(--color-pink-500) 6%, transparent);
+  --grain-opacity: 0.035;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(60rem 40rem at 0% 0%, var(--glow-a), transparent 70%),
+    radial-gradient(50rem 36rem at 100% 100%, var(--glow-b), transparent 70%);
+  background-attachment: fixed;
+  color: var(--fg);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Static film grain. A still SVG costs nothing per frame, unlike an
+   animated canvas. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Quiet scrollbars that only show their thumb. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Motion: Off. Components also check the setting, this catches CSS
+   transitions everywhere else. */
+[data-motion="off"] *,
+[data-motion="off"] *::before,
+[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }

@@ -1,8 +1,13 @@
 pub(crate) mod migrations;
+pub mod library;
+pub mod playlists;
 pub mod queries;
+pub mod roots;
+pub mod settings;
+
 use std::fs;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
@@ -24,19 +29,8 @@ impl Database {
 
         let database_path = app_data_dir.join("music_player.db");
 
-        let connection = Connection::open(&database_path)
-            .map_err(|error| error.to_string())?;
+        let connection = open_connection(&database_path)?;
 
-        connection
-            .execute_batch(
-                "
-                PRAGMA foreign_keys = ON;
-                PRAGMA journal_mode = WAL;
-                PRAGMA busy_timeout = 5000;
-                ",
-            )
-            .map_err(|error| error.to_string())?;
-            
         migrations::run_migrations(&connection)?;
 
         Ok(Self {
@@ -44,4 +38,30 @@ impl Database {
             path: database_path,
         })
     }
+
+    pub fn lock(&self) -> Result<MutexGuard<'_, Connection>, String> {
+        self.connection.lock().map_err(|error| error.to_string())
+    }
+}
+
+/// Open a connection with the pragmas every connection needs.
+///
+/// Long-running jobs (library scans) open their own connection so
+/// the UI's connection is never blocked behind them. WAL mode lets
+/// readers continue while a scan writes.
+pub fn open_connection(path: &Path) -> Result<Connection, String> {
+    let connection = Connection::open(path)
+        .map_err(|error| error.to_string())?;
+
+    connection
+        .execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+            PRAGMA journal_mode = WAL;
+            PRAGMA busy_timeout = 5000;
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(connection)
 }

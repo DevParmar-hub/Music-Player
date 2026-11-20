@@ -143,5 +143,76 @@ pub fn run_migrations(connection: &Connection) -> Result<(), String> {
             })?;
     }
 
+    // Migration 3: library roots, settings, playlists, track extras
+    //
+    // tracks.artwork_hash is NULL until the file's artwork has been
+    // looked for, and '' when it was looked for and none exists. The
+    // indexer uses NULL to backfill tracks indexed before this version.
+    if version < 3 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE IF NOT EXISTS library_roots (
+                    id INTEGER PRIMARY KEY,
+                    path TEXT NOT NULL UNIQUE,
+                    date_added INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    description TEXT,
+                    sync_to_folder INTEGER NOT NULL DEFAULT 0,
+                    folder_path TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS playlist_tracks (
+                    id INTEGER PRIMARY KEY,
+                    playlist_id INTEGER NOT NULL
+                        REFERENCES playlists(id)
+                        ON DELETE CASCADE,
+                    track_id INTEGER NOT NULL
+                        REFERENCES tracks(id)
+                        ON DELETE CASCADE,
+                    position INTEGER NOT NULL,
+                    added_at INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_order
+                    ON playlist_tracks(playlist_id, position);
+
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id
+                    ON playlist_tracks(track_id);
+
+                ALTER TABLE tracks ADD COLUMN year INTEGER;
+                ALTER TABLE tracks ADD COLUMN artwork_hash TEXT;
+                ALTER TABLE tracks ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;
+
+                CREATE INDEX IF NOT EXISTS idx_tracks_album_id
+                    ON tracks(album_id);
+
+                CREATE INDEX IF NOT EXISTS idx_tracks_artist_id
+                    ON tracks(artist_id);
+
+                PRAGMA user_version = 3;
+
+                COMMIT;
+                ",
+            )
+            .map_err(|error| {
+                let _ = connection.execute_batch("ROLLBACK;");
+                error.to_string()
+            })?;
+    }
+
     Ok(())
 }

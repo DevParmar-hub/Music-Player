@@ -1,510 +1,15 @@
-
-mod db;
-mod metadata;
-mod scanner;
+mod artwork;
+mod commands;
 mod content_identity;
+mod db;
 mod indexer;
+mod metadata;
+mod scan;
+mod scanner;
 
-use tauri::{Manager, State};
+use tauri::Manager;
 
-// ============================================================
-// Basic Rust Test
-// ============================================================
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-// ============================================================
-// Database Verification
-// ============================================================
-
-#[tauri::command]
-fn verify_database(
-    state: State<'_, db::Database>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let mut statement = connection
-        .prepare(
-            "
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table'
-            ORDER BY name;
-            ",
-        )
-        .map_err(|error| error.to_string())?;
-
-    let tables = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(|error| error.to_string())?;
-
-    drop(statement);
-
-    let schema_version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|error| error.to_string())?;
-
-    let track_count: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM tracks",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-
-    let track_files_count: i64 = if tables.iter().any(|name| name == "track_files") {
-        connection
-            .query_row(
-                "SELECT COUNT(*) FROM track_files",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|error| error.to_string())?
-    } else {
-        0
-    };
-
-    Ok(format!(
-        "Database connected successfully\n\
-         Path: {}\n\
-         Schema version: {}\n\
-         Tables: {:?}\n\
-         Logical tracks: {}\n\
-         Registered physical files: {}",
-        state.path.display(),
-        schema_version,
-        tables,
-        track_count,
-        track_files_count,
-    ))
-}
-
-// ============================================================
-// Music Scanner — Find Files Only
-// ============================================================
-
-#[tauri::command]
-fn scan_music_directory(
-    path: String,
-) -> Result<Vec<String>, String> {
-    let root = std::path::Path::new(&path);
-
-    if !root.exists() {
-        return Err(format!("Directory does not exist: {}", path));
-    }
-
-    if !root.is_dir() {
-        return Err(format!("Path is not a directory: {}", path));
-    }
-
-    let tracks = scanner::scan_directory(root)?;
-
-    Ok(tracks
-        .into_iter()
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect())
-}
-
-// ============================================================
-// Music Library — Scan and Index Directory
-// ============================================================
-
-#[tauri::command]
-fn scan_and_index_music_directory(
-    state: State<'_, db::Database>,
-    path: String,
-) -> Result<String, String> {
-    let root = std::path::Path::new(&path);
-
-    if !root.exists() {
-        return Err(format!("Directory does not exist: {}", path));
-    }
-
-    if !root.is_dir() {
-        return Err(format!("Path is not a directory: {}", path));
-    }
-
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let summary =
-        indexer::scan_and_index_directory(&connection, root)?;
-
-    let mut result = format!(
-        "Directory indexing completed.\n\
-         Files found: {}\n\
-         Newly indexed: {}\n\
-         Already indexed / duplicate files: {}\n\
-         Updated (changed on disk): {}\n\
-         Marked unavailable: {}\n\
-         Failed: {}",
-        summary.files_found,
-        summary.indexed,
-        summary.already_indexed,
-        summary.updated,
-        summary.unavailable,
-        summary.failed,
-    );
-
-    if !summary.errors.is_empty() {
-        result.push_str("\n\nErrors:");
-
-        for error in summary.errors {
-            result.push_str("\n- ");
-            result.push_str(&error);
-        }
-    }
-
-    Ok(result)
-}
-
-// ============================================================
-// Metadata Test
-// ============================================================
-
-#[tauri::command]
-fn test_read_metadata(
-    path: String,
-) -> Result<String, String> {
-    let metadata =
-        metadata::read_metadata(std::path::Path::new(&path))?;
-
-    Ok(format!("{:#?}", metadata))
-}
-
-// ============================================================
-// Content Key Test
-// ============================================================
-
-#[tauri::command]
-fn test_content_key(
-    path: String,
-) -> Result<String, String> {
-    content_identity::generate_content_key(
-        std::path::Path::new(&path),
-    )
-}
-
-// ============================================================
-// Library Indexer — Single Track
-// ============================================================
-
-#[tauri::command]
-fn index_music_track(
-    app: tauri::AppHandle,
-    path: String,
-) -> Result<String, String> {
-    let database = app.state::<db::Database>();
-
-    let connection = database
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let path = std::path::Path::new(&path);
-
-    indexer::index_track(&connection, path)
-        .map(|outcome| outcome.describe(path))
-}
-
-// ============================================================
-// Artist Tests
-// ============================================================
-
-#[tauri::command]
-fn test_insert_artist(
-    state: State<'_, db::Database>,
-    name: String,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let id = db::queries::insert_artist(&connection, &name)?;
-
-    Ok(format!(
-        "Artist inserted successfully with ID: {}",
-        id
-    ))
-}
-
-#[tauri::command]
-fn test_get_artists(
-    state: State<'_, db::Database>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let artists = db::queries::get_artists(&connection)?;
-
-    Ok(format!("{:#?}", artists))
-}
-
-#[tauri::command]
-fn update_artist(state: State<'_, db::Database>, artist_id: i64, name: String) -> Result<(), String> {
-    let connection = state.connection.lock().map_err(|error| error.to_string())?;
-    db::queries::update_artist(&connection, artist_id, &name)
-}
-
-#[tauri::command]
-fn delete_artist(state: State<'_, db::Database>, artist_id: i64) -> Result<(), String> {
-    let connection = state.connection.lock().map_err(|error| error.to_string())?;
-    db::queries::delete_artist(&connection, artist_id)
-}
-
-// ============================================================
-// Album Tests
-// ============================================================
-
-#[tauri::command]
-fn test_insert_album(
-    state: State<'_, db::Database>,
-    title: String,
-    artist_id: Option<i64>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let id =
-        db::queries::insert_album(&connection, &title, artist_id)?;
-
-    Ok(format!(
-        "Album inserted successfully with ID: {}",
-        id
-    ))
-}
-
-#[tauri::command]
-fn test_get_albums(
-    state: State<'_, db::Database>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let albums = db::queries::get_albums(&connection)?;
-
-    Ok(format!("{:#?}", albums))
-}
-
-#[tauri::command]
-fn test_update_album(
-    state: State<'_, db::Database>,
-    album_id: i64,
-    title: String,
-    artist_id: Option<i64>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    db::queries::update_album(
-        &connection,
-        album_id,
-        &title,
-        artist_id,
-    )?;
-
-    Ok(format!("Album {} updated successfully", album_id))
-}
-
-#[tauri::command]
-fn test_delete_album(
-    state: State<'_, db::Database>,
-    album_id: i64,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    db::queries::delete_album(&connection, album_id)?;
-
-    Ok(format!("Album {} deleted successfully", album_id))
-}
-
-// ============================================================
-// Track Tests
-// ============================================================
-
-#[tauri::command]
-fn test_insert_track(
-    state: State<'_, db::Database>,
-    content_key: String,
-    file_path: String,
-    title: String,
-    artist_id: Option<i64>,
-    album_id: Option<i64>,
-    genre: Option<String>,
-    track_number: Option<i64>,
-    disc_number: Option<i64>,
-    duration_ms: i64,
-    date_added: i64,
-    file_mtime: i64,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let id = db::queries::insert_track(
-        &connection,
-        &content_key,
-        &file_path,
-        &title,
-        artist_id,
-        album_id,
-        genre.as_deref(),
-        track_number,
-        disc_number,
-        duration_ms,
-        date_added,
-        file_mtime,
-    )?;
-
-    Ok(format!(
-        "Track inserted successfully with ID: {}",
-        id
-    ))
-}
-
-#[tauri::command]
-fn test_get_tracks(
-    state: State<'_, db::Database>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let tracks = db::queries::get_tracks(&connection)?;
-
-    Ok(format!("{:#?}", tracks))
-}
-
-#[tauri::command]
-fn test_update_track(
-    state: State<'_, db::Database>,
-    track_id: i64,
-    title: String,
-    artist_id: Option<i64>,
-    album_id: Option<i64>,
-    genre: Option<String>,
-    track_number: Option<i64>,
-    disc_number: Option<i64>,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    db::queries::update_track(
-        &connection,
-        track_id,
-        &title,
-        artist_id,
-        album_id,
-        genre.as_deref(),
-        track_number,
-        disc_number,
-    )?;
-
-    Ok(format!(
-        "Track {} updated successfully",
-        track_id
-    ))
-}
-
-#[tauri::command]
-fn test_delete_track(
-    state: State<'_, db::Database>,
-    track_id: i64,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    db::queries::delete_track(&connection, track_id)?;
-
-    Ok(format!("Track {} deleted successfully", track_id))
-}
-
-// ============================================================
-// Track File Tests
-// ============================================================
-
-#[tauri::command]
-fn test_get_track_files(
-    state: State<'_, db::Database>,
-    track_id: i64,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let files = db::queries::get_track_files(
-        &connection,
-        track_id,
-    )?;
-
-    Ok(format!("{:#?}", files))
-}
-
-#[tauri::command]
-fn test_count_track_files(
-    state: State<'_, db::Database>,
-    track_id: i64,
-) -> Result<String, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let count = db::queries::count_track_files(
-        &connection,
-        track_id,
-    )?;
-
-    Ok(format!(
-        "Track {} has {} registered physical file(s)",
-        track_id,
-        count
-    ))
-}
-
-#[tauri::command]
-fn update_track_file(
-    state: State<'_, db::Database>, file_id: i64, file_path: String,
-    file_mtime: i64, available: bool,
-) -> Result<(), String> {
-    let connection = state.connection.lock().map_err(|error| error.to_string())?;
-    db::queries::update_track_file(&connection, file_id, &file_path, file_mtime, available)
-}
-
-#[tauri::command]
-fn delete_track_file(state: State<'_, db::Database>, file_id: i64) -> Result<(), String> {
-    let connection = state.connection.lock().map_err(|error| error.to_string())?;
-    db::queries::delete_track_file(&connection, file_id)
-}
+use commands::{library, playlists, roots, settings};
 
 // ============================================================
 // Application Entry Point
@@ -513,38 +18,65 @@ fn delete_track_file(state: State<'_, db::Database>, file_id: i64) -> Result<(),
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let database = db::Database::new(&app.handle())?;
+            let database = db::Database::new(app.handle())?;
+
+            // Artwork lives in local data, not the cache directory:
+            // the database refers to it, so OS cleanup must not
+            // delete it.
+            let artwork_directory = app.path().app_local_data_dir()?.join("artwork");
+            let artwork = artwork::ArtworkCache::new(artwork_directory)?;
+
+            roots::allow_asset_access(app.handle(), &artwork.directory().to_string_lossy());
+
+            for root in db::roots::get_root_paths(&*database.lock()?)? {
+                roots::allow_asset_access(app.handle(), &root);
+            }
+
             app.manage(database);
+            app.manage(scan::ScanState::new(artwork));
+
             Ok(())
         })
-        .invoke_handler(
-            tauri::generate_handler![
-                greet,
-                verify_database,
-                scan_music_directory,
-                scan_and_index_music_directory,
-                test_read_metadata,
-                test_content_key,
-                index_music_track,
-                test_insert_artist,
-                test_get_artists,
-                update_artist,
-                delete_artist,
-                test_insert_album,
-                test_get_albums,
-                test_update_album,
-                test_delete_album,
-                test_insert_track,
-                test_get_tracks,
-                test_update_track,
-                test_delete_track,
-                test_get_track_files,
-                test_count_track_files
-                ,update_track_file,
-                delete_track_file
-            ],
-        )
+        .invoke_handler(tauri::generate_handler![
+            library::get_tracks,
+            library::get_albums,
+            library::get_artists,
+            library::get_library_stats,
+            library::get_track_files,
+            library::get_artwork_directory,
+            library::set_track_favorite,
+            library::record_play,
+            library::update_artist,
+            library::delete_artist,
+            library::update_album,
+            library::delete_album,
+            library::update_track_file,
+            library::delete_track_file,
+            roots::get_library_roots,
+            roots::add_library_root,
+            roots::remove_library_root,
+            roots::start_library_scan,
+            roots::cancel_library_scan,
+            roots::get_scan_status,
+            playlists::get_playlists,
+            playlists::get_playlist,
+            playlists::get_playlist_entries,
+            playlists::create_playlist,
+            playlists::update_playlist,
+            playlists::delete_playlist,
+            playlists::add_tracks_to_playlist,
+            playlists::remove_playlist_entries,
+            playlists::move_playlist_entry,
+            settings::get_settings,
+            settings::set_setting,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

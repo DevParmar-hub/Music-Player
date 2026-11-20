@@ -1,504 +1,95 @@
-
 'use client';
 
-import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import Link from 'next/link';
+import { useSyncExternalStore } from 'react';
+import { FolderPlus, Sparkles } from 'lucide-react';
 
-export default function Home() {
-  const [message, setMessage] = useState('');
-  const [databaseStatus, setDatabaseStatus] = useState('');
-  const [artistStatus, setArtistStatus] = useState('');
-  const [albumStatus, setAlbumStatus] = useState('');
-  const [trackStatus, setTrackStatus] = useState('');
-  const [scannerStatus, setScannerStatus] = useState('');
-  const [musicDirectory, setMusicDirectory] = useState('');
-  const [isIndexing, setIsIndexing] = useState(false);
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Page, PageHeader } from '@/components/ui/PageHeader';
+import { ScanProgressCard } from '@/components/library/ScanProgressCard';
+import { useScan } from '@/lib/stores/scan';
 
-  // ============================================================
-  // Rust IPC
-  // ============================================================
-
-  async function testRust() {
-    try {
-      const response = await invoke<string>('greet', {
-        name: 'Dev',
-      });
-      setMessage(response);
-    } catch (error) {
-      setMessage(`Rust error: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Database
-  // ============================================================
-
-  async function testDatabase() {
-    try {
-      const response = await invoke<string>('verify_database');
-      setDatabaseStatus(response);
-    } catch (error) {
-      setDatabaseStatus(
-        `Database connection failed: ${String(error)}`
-      );
-    }
-  }
-
-  // ============================================================
-  // Artist Tests
-  // ============================================================
-
-  async function testInsertArtist() {
-    try {
-      const response = await invoke<string>('test_insert_artist', {
-        name: 'Linkin Park',
-      });
-      setArtistStatus(response);
-    } catch (error) {
-      setArtistStatus(
-        `Artist insertion failed: ${String(error)}`
-      );
-    }
-  }
-
-  async function testGetArtists() {
-    try {
-      const response = await invoke<string>('test_get_artists');
-      setArtistStatus(`Artists:\n${response}`);
-    } catch (error) {
-      setArtistStatus(`Artist read failed: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Album Tests
-  // ============================================================
-
-  async function testInsertAlbum() {
-    try {
-      const response = await invoke<string>('test_insert_album', {
-        title: 'Hybrid Theory',
-        artistId: 1,
-      });
-      setAlbumStatus(response);
-    } catch (error) {
-      setAlbumStatus(
-        `Album insertion failed: ${String(error)}`
-      );
-    }
-  }
-
-  async function testGetAlbums() {
-    try {
-      const response = await invoke<string>('test_get_albums');
-      setAlbumStatus(`Albums:\n${response}`);
-    } catch (error) {
-      setAlbumStatus(`Album read failed: ${String(error)}`);
-    }
-  }
-
-  async function testUpdateAlbum() {
-    try {
-      const response = await invoke<string>('test_update_album', {
-        albumId: 1,
-        title: 'Hybrid Theory (Updated)',
-        artistId: 1,
-      });
-      setAlbumStatus(response);
-    } catch (error) {
-      setAlbumStatus(`Album update failed: ${String(error)}`);
-    }
-  }
-
-  async function testDeleteAlbum() {
-    try {
-      const response = await invoke<string>('test_delete_album', {
-        albumId: 1,
-      });
-      setAlbumStatus(response);
-    } catch (error) {
-      setAlbumStatus(`Album deletion failed: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Track Tests
-  // ============================================================
-
-  async function testInsertTrack() {
-    try {
-      const response = await invoke<string>('test_insert_track', {
-        contentKey: 'test-content-key-001',
-        filePath: 'C:\\Music\\Linkin Park\\In The End.mp3',
-        title: 'In the End',
-        artistId: 1,
-        albumId: 1,
-        genre: 'Alternative Rock',
-        trackNumber: 8,
-        discNumber: 1,
-        durationMs: 216000,
-        dateAdded: Date.now(),
-        fileMtime: Date.now(),
-      });
-      setTrackStatus(response);
-    } catch (error) {
-      setTrackStatus(
-        `Track insertion failed: ${String(error)}`
-      );
-    }
-  }
-
-  async function testGetTracks() {
-    try {
-      const response = await invoke<string>('test_get_tracks');
-      setTrackStatus(`Tracks:\n${response}`);
-    } catch (error) {
-      setTrackStatus(`Track read failed: ${String(error)}`);
-    }
-  }
-
-  async function testUpdateTrack() {
-    try {
-      const response = await invoke<string>('test_update_track', {
-        trackId: 1,
-        title: 'In the End (Updated)',
-        artistId: 1,
-        albumId: 1,
-        genre: 'Rock',
-        trackNumber: 8,
-        discNumber: 1,
-      });
-      setTrackStatus(response);
-    } catch (error) {
-      setTrackStatus(`Track update failed: ${String(error)}`);
-    }
-  }
-
-  async function testDeleteTrack() {
-    try {
-      const response = await invoke<string>('test_delete_track', {
-        trackId: 1,
-      });
-      setTrackStatus(response);
-    } catch (error) {
-      setTrackStatus(`Track deletion failed: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Music Scanner — Discover Files
-  // ============================================================
-
-  async function testScanMusicDirectory() {
-    const directory = musicDirectory.trim();
-
-    if (!directory) {
-      setScannerStatus('Please enter a music directory.');
-      return;
-    }
-
-    try {
-      const response = await invoke<string[]>(
-        'scan_music_directory',
-        { path: directory }
-      );
-
-      if (response.length === 0) {
-        setScannerStatus(
-          'Scan completed successfully.\n' +
-            'No supported audio files found.'
-        );
-        return;
-      }
-
-      setScannerStatus(
-        `Scan completed successfully.\n\n` +
-          `Found ${response.length} audio file(s):\n\n` +
-          response.join('\n')
-      );
-    } catch (error) {
-      setScannerStatus(`Scanner failed: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Music Library — Scan and Index Directory
-  // ============================================================
-
-  async function scanAndIndexMusicDirectory() {
-    const directory = musicDirectory.trim();
-
-    if (!directory) {
-      setScannerStatus('Please enter a music directory.');
-      return;
-    }
-
-    if (isIndexing) {
-      return;
-    }
-
-    setIsIndexing(true);
-    setScannerStatus(
-      'Indexing music directory...\nPlease wait.'
-    );
-
-    try {
-      const response = await invoke<string>(
-        'scan_and_index_music_directory',
-        { path: directory }
-      );
-
-      setScannerStatus(response);
-    } catch (error) {
-      setScannerStatus(
-        `Directory indexing failed: ${String(error)}`
-      );
-    } finally {
-      setIsIndexing(false);
-    }
-  }
-
-  // ============================================================
-  // Metadata
-  // ============================================================
-
-  async function testReadMetadata() {
-    try {
-      const response = await invoke<string>('test_read_metadata', {
-        path: 'C:\\Users\\ACER\\Music\\test.mp3',
-      });
-      setScannerStatus(`Metadata:\n${response}`);
-    } catch (error) {
-      setScannerStatus(`Metadata read failed: ${String(error)}`);
-    }
-  }
-
-  // ============================================================
-  // Content Identity
-  // ============================================================
-
- async function testContentKey() {
-  try {
-    const path =
-      'C:\\Users\\ACER\\Music\\ParadiseCircus(Zeds Dead).mpeg';
-
-    const response = await invoke<string>(
-      'test_content_key',
-      { path }
-    );
-
-    setScannerStatus(`Content Key:\n${response}`);
-  } catch (error) {
-    setScannerStatus(
-      `Content key generation failed: ${String(error)}`
-    );
-  }
+function greeting(hour: number): string {
+  if (hour < 5) return 'Late night listening';
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
-  // ============================================================
-  // Library Indexer — Single Track
-  // ============================================================
+// The hour only matters on the client; the static export renders a
+// neutral title that is replaced after hydration.
+const subscribeNever = () => () => {};
 
-  async function testIndexTrack() {
-    try {
-      const response = await invoke<string>('index_music_track', {
-        path: 'C:\\Users\\ACER\\Music\\test.mp3',
-      });
-      setScannerStatus(response);
-    } catch (error) {
-      setScannerStatus(`Indexing failed: ${String(error)}`);
-    }
-  }
+export default function Home() {
+  const title = useSyncExternalStore(
+    subscribeNever,
+    () => greeting(new Date().getHours()),
+    () => 'Welcome back',
+  );
+  const roots = useScan((state) => state.roots);
+  const stats = useScan((state) => state.stats);
+  const running = useScan((state) => state.running);
+  const addFolder = useScan((state) => state.addFolder);
 
-  // ============================================================
-  // UI
-  // ============================================================
+  const hasLibrary = (stats?.trackCount ?? 0) > 0;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-4xl font-bold">
-        Local Music Player
-      </h1>
+    <Page>
+      <PageHeader eyebrow="Home" title={title} />
 
-      {/* Rust IPC */}
-      <section className="flex flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">Rust IPC</h2>
-        <button
-          onClick={testRust}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Rust
-        </button>
-        <p className="max-w-2xl whitespace-pre-wrap break-all">
-          {message}
-        </p>
-      </section>
+      {running && <ScanProgressCard />}
 
-      {/* Database */}
-      <section className="flex flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">Database</h2>
-        <button
-          onClick={testDatabase}
-          className="rounded-lg bg-white px-4 py-2 text-black"
+      {roots.length === 0 && !running ? (
+        <EmptyState
+          icon={<FolderPlus className="size-6" />}
+          title="Bring your music in"
+          action={
+            <Button variant="primary" icon={<FolderPlus className="size-4" />} onClick={addFolder}>
+              Choose music folder
+            </Button>
+          }
         >
-          Test Database
-        </button>
-        <p className="max-w-2xl whitespace-pre-wrap break-all">
-          {databaseStatus}
-        </p>
-      </section>
+          Point us at the folder where your music lives. We read your files where they are and
+          never move or change them.
+        </EmptyState>
+      ) : (
+        hasLibrary &&
+        stats && (
+          <section aria-label="Library overview" className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Stat label="Songs" value={stats.trackCount.toLocaleString()} />
+            <Stat label="Albums" value={stats.albumCount.toLocaleString()} />
+            <Stat label="Artists" value={stats.artistCount.toLocaleString()} />
+            <Stat label="Hours of music" value={formatHours(stats.totalDurationMs)} />
+          </section>
+        )
+      )}
 
-      {/* Artists */}
-      <section className="flex flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">Artists</h2>
-        <button
-          onClick={testInsertArtist}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Insert Artist
-        </button>
-        <button
-          onClick={testGetArtists}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Get Artists
-        </button>
-        <p className="max-w-2xl whitespace-pre-wrap break-all">
-          {artistStatus}
-        </p>
-      </section>
-
-      {/* Albums */}
-      <section className="flex flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">Albums</h2>
-        <button
-          onClick={testInsertAlbum}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Insert Album
-        </button>
-        <button
-          onClick={testGetAlbums}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Get Albums
-        </button>
-        <button
-          onClick={testUpdateAlbum}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Update Album
-        </button>
-        <button
-          onClick={testDeleteAlbum}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Delete Album
-        </button>
-        <p className="max-w-2xl whitespace-pre-wrap break-all">
-          {albumStatus}
-        </p>
-      </section>
-
-      {/* Tracks */}
-      <section className="flex flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">Tracks</h2>
-        <button
-          onClick={testInsertTrack}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Insert Track
-        </button>
-        <button
-          onClick={testGetTracks}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Get Tracks
-        </button>
-        <button
-          onClick={testUpdateTrack}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Update Track
-        </button>
-        <button
-          onClick={testDeleteTrack}
-          className="rounded-lg bg-white px-4 py-2 text-black"
-        >
-          Test Delete Track
-        </button>
-        <p className="max-w-2xl whitespace-pre-wrap break-all">
-          {trackStatus}
-        </p>
-      </section>
-
-      {/* Music Scanner and Library Indexer */}
-      <section className="flex w-full max-w-3xl flex-col items-center gap-3">
-        <h2 className="text-2xl font-semibold">
-          Music Scanner &amp; Library Indexer
-        </h2>
-
-        <p className="max-w-2xl text-center text-sm">
-          Enter a folder path. Scanning discovers supported audio
-          files, while indexing also reads metadata and saves tracks
-          to SQLite.
-        </p>
-
-        <input
-          type="text"
-          value={musicDirectory}
-          onChange={(event) => setMusicDirectory(event.target.value)}
-          placeholder="Enter a folder path, e.g. C:\Users\ACER\Music"
-          aria-label="Music directory path"
-          className="w-full rounded-lg px-4 py-2 text-black"
-        />
-
-        <button
-          onClick={testScanMusicDirectory}
-          disabled={isIndexing}
-          className="rounded-lg bg-white px-4 py-2 text-black disabled:opacity-50"
-        >
-          Scan Music Directory
-        </button>
-
-        <button
-          onClick={scanAndIndexMusicDirectory}
-          disabled={isIndexing}
-          className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isIndexing
-            ? 'Indexing...'
-            : 'Scan and Index Entire Directory'}
-        </button>
-
-        <button
-          onClick={testReadMetadata}
-          disabled={isIndexing}
-          className="rounded-lg bg-white px-4 py-2 text-black disabled:opacity-50"
-        >
-          Test Read Metadata
-        </button>
-
-        <button
-          onClick={testContentKey}
-          disabled={isIndexing}
-          className="rounded-lg bg-white px-4 py-2 text-black disabled:opacity-50"
-        >
-          Test Content Key
-        </button>
-
-        <button
-          onClick={testIndexTrack}
-          disabled={isIndexing}
-          className="rounded-lg bg-white px-4 py-2 text-black disabled:opacity-50"
-        >
-          Test Index Single Track
-        </button>
-
-        <p className="w-full max-w-3xl whitespace-pre-wrap break-all">
-          {scannerStatus}
-        </p>
-      </section>
-    </main>
+      {hasLibrary && (
+        <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-5 py-4 text-sm text-fg-muted">
+          <Sparkles className="size-4 shrink-0 text-love-text" />
+          <span className="flex-1">
+            Recently added, most played and your smart playlists will live here.
+          </span>
+          <Link href="/settings" className="text-accent-text hover:underline">
+            Library settings
+          </Link>
+        </div>
+      )}
+    </Page>
   );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-2xl border border-border bg-surface/60 px-5 py-4">
+      <span className="font-display text-4xl leading-none text-fg tabular-nums">{value}</span>
+      <span className="text-xs tracking-wide text-fg-muted uppercase">{label}</span>
+    </div>
+  );
+}
+
+function formatHours(milliseconds: number): string {
+  const hours = milliseconds / 3_600_000;
+  return hours < 10 ? hours.toFixed(1) : Math.round(hours).toLocaleString();
 }
