@@ -17,6 +17,18 @@ const SIZES: Record<Size, string> = {
   md: 'h-10 px-4 text-sm gap-2',
 };
 
+/** Button styles for elements that are not buttons, such as links. */
+export function buttonClass(variant: Variant = 'secondary', size: Size = 'md', className?: string): string {
+  return cn(
+    'inline-flex shrink-0 items-center justify-center rounded-full font-medium',
+    'transition-[background-color,color,transform] duration-150 active:scale-[0.97]',
+    'disabled:pointer-events-none disabled:opacity-40',
+    VARIANTS[variant],
+    SIZES[size],
+    className,
+  );
+}
+
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
@@ -35,14 +47,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full font-medium',
-        'transition-[background-color,color,transform] duration-150 active:scale-[0.97]',
-        'disabled:pointer-events-none disabled:opacity-40',
-        VARIANTS[variant],
-        SIZES[size],
-        className,
-      )}
+      className={buttonClass(variant, size, className)}
       {...props}
     >
       {icon}

@@ -4,11 +4,12 @@
 // playback and playlists end to end. Kept as a developer lab until
 // the real views cover all of it.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import * as api from '@/lib/tauri/api';
-import { artworkUrl, audioUrl, loadArtworkDirectory } from '@/lib/tauri/assets';
+import { usePlayer } from '@/lib/player/store';
+import { artworkUrl, loadArtworkDirectory } from '@/lib/tauri/assets';
 import type {
   LibraryRoot,
   LibraryStats,
@@ -27,10 +28,8 @@ export default function Home() {
   const [artworkDirectory, setArtworkDirectory] = useState('');
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [nowPlaying, setNowPlaying] = useState<Track | null>(null);
   const [playlistName, setPlaylistName] = useState('');
   const [error, setError] = useState('');
-  const audioRef = useRef<HTMLAudioElement>(null);
 
   const report = (caught: unknown) => setError(String(caught));
 
@@ -111,17 +110,12 @@ export default function Home() {
     }
   }
 
-  async function play(track: Track) {
-    setNowPlaying(track);
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.src = audioUrl(track.filePath);
-    try {
-      await audio.play();
-      await api.recordPlay(track.id);
-    } catch (caught) {
-      report(caught);
-    }
+  // Plays through the real engine, with the visible list as the queue.
+  function play(index: number) {
+    usePlayer.getState().playTracks(tracks.slice(0, VISIBLE_TRACKS), {
+      startIndex: index,
+      source: 'Backend check',
+    });
   }
 
   async function toggleFavorite(track: Track) {
@@ -271,10 +265,8 @@ export default function Home() {
         <h2 className="text-lg font-medium">
           Tracks {tracks.length > VISIBLE_TRACKS && `(first ${VISIBLE_TRACKS})`}
         </h2>
-        <audio ref={audioRef} controls className="w-full" />
-        {nowPlaying && <p className="text-sm">Playing: {nowPlaying.title}</p>}
         <ul className="flex flex-col gap-1">
-          {tracks.slice(0, VISIBLE_TRACKS).map((track) => (
+          {tracks.slice(0, VISIBLE_TRACKS).map((track, index) => (
             <li key={track.id} className="flex items-center gap-3 text-sm">
               {track.artworkHash && artworkDirectory ? (
                 // Local asset-protocol image; next/image cannot optimize it.
@@ -287,8 +279,14 @@ export default function Home() {
               ) : (
                 <div className="h-10 w-10 rounded bg-neutral-500/20" />
               )}
-              <button className="underline" onClick={() => play(track)} disabled={!track.available}>
+              <button className="underline" onClick={() => play(index)} disabled={!track.available}>
                 play
+              </button>
+              <button className="underline opacity-70" onClick={() => usePlayer.getState().playNext([track])}>
+                next
+              </button>
+              <button className="underline opacity-70" onClick={() => usePlayer.getState().addToQueue([track])}>
+                + queue
               </button>
               <button onClick={() => toggleFavorite(track)} aria-label="Favorite">
                 {track.favorite ? '♥' : '♡'}

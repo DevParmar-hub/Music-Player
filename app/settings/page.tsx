@@ -20,7 +20,7 @@ import { Page, PageHeader } from '@/components/ui/PageHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/cn';
 import { useScan } from '@/lib/stores/scan';
-import { useSettings, type NowPlayingMode } from '@/lib/stores/settings';
+import { useSettings, type CrossfadeSeconds, type NowPlayingMode } from '@/lib/stores/settings';
 import type { LibraryRoot, ScanProgress } from '@/lib/tauri/types';
 
 export default function SettingsPage() {
@@ -28,6 +28,7 @@ export default function SettingsPage() {
     <Page>
       <PageHeader eyebrow="Settings" title="Make it yours" />
       <AppearanceSection />
+      <PlaybackSection />
       <LibrarySection />
       <LabsSection />
     </Page>
@@ -158,6 +159,64 @@ function StudioPreview() {
       <div className="absolute -inset-3 rounded-2xl bg-gradient-to-br from-teal-500/40 to-pink-500/30 blur-xl" />
       <div className="relative size-14 rounded-lg bg-gradient-to-br from-teal-600 to-pink-600 shadow-float" />
     </div>
+  );
+}
+
+// ============================================================
+// Playback
+// ============================================================
+
+const SHORTCUTS: [string, string][] = [
+  ['Space', 'Play or pause'],
+  ['Ctrl + → / ←', 'Next or previous song'],
+  ['Shift + → / ←', 'Skip ahead or back 10 seconds'],
+  ['Ctrl + ↑ / ↓', 'Volume up or down'],
+  ['M', 'Mute'],
+];
+
+function PlaybackSection() {
+  const crossfade = useSettings((state) => state.crossfade);
+  const update = useSettings((state) => state.update);
+
+  return (
+    <Section title="Playback">
+      <Row
+        label="Crossfade"
+        hint={
+          crossfade === 0
+            ? 'Songs follow each other without a gap.'
+            : `Each song fades into the next over ${crossfade} seconds.`
+        }
+      >
+        <Segmented
+          id="crossfade"
+          label="Crossfade"
+          value={String(crossfade)}
+          onChange={(value) => update('crossfade', Number(value) as CrossfadeSeconds)}
+          options={[
+            { value: '0', label: 'Off' },
+            { value: '3', label: '3s' },
+            { value: '6', label: '6s' },
+            { value: '9', label: '9s' },
+          ]}
+        />
+      </Row>
+
+      <Row label="Keyboard shortcuts" hint="Work anywhere except while typing.">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          {SHORTCUTS.map(([keys, action]) => (
+            <div key={keys} className="contents">
+              <dt>
+                <kbd className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-xs text-fg">
+                  {keys}
+                </kbd>
+              </dt>
+              <dd className="text-fg-muted">{action}</dd>
+            </div>
+          ))}
+        </dl>
+      </Row>
+    </Section>
   );
 }
 

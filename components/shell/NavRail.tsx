@@ -13,6 +13,7 @@ import {
   Music2,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ import {
 import { cn } from '@/lib/cn';
 import { scanFraction, useScan } from '@/lib/stores/scan';
 import { useSettings } from '@/lib/stores/settings';
+import { useUi } from '@/lib/stores/ui';
 import { LogoMark } from './LogoMark';
 
 interface NavItem {
@@ -72,6 +74,8 @@ export function NavRail() {
           Music Player
         </Label>
       </div>
+
+      <SearchButton collapsed={collapsed} />
 
       <NavGroup items={LIBRARY} pathname={pathname} collapsed={collapsed} />
 
@@ -146,6 +150,30 @@ function NavGroup({
         );
       })}
     </ul>
+  );
+}
+
+/** Opens the command palette; shows its shortcut when expanded. */
+function SearchButton({ collapsed }: { collapsed: boolean }) {
+  const openPalette = useUi((state) => state.setPaletteOpen);
+
+  return (
+    <button
+      type="button"
+      onClick={() => openPalette(true)}
+      aria-label="Search (Ctrl+K)"
+      title={collapsed ? 'Search (Ctrl+K)' : undefined}
+      aria-keyshortcuts="Control+K"
+      className="-mt-2 flex h-10 items-center gap-3 rounded-xl border border-border bg-surface-2/60 px-3 text-sm text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
+    >
+      <Search className="size-[18px] shrink-0" />
+      <Label collapsed={collapsed} className="flex-1 text-left">
+        Search
+      </Label>
+      <Label collapsed={collapsed}>
+        <kbd className="rounded-md border border-border px-1.5 py-0.5 font-sans text-[10px]">Ctrl K</kbd>
+      </Label>
+    </button>
   );
 }
 

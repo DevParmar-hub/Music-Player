@@ -1,34 +1,50 @@
 'use client';
 
+import Link from 'next/link';
+import { AnimatePresence, motion } from 'motion/react';
 import {
-  Heart,
   ListMusic,
+  LoaderCircle,
   Maximize2,
-  Music2,
   Pause,
   Play,
   Repeat,
+  Repeat1,
   Shuffle,
   SkipBack,
   SkipForward,
-  Volume2,
 } from 'lucide-react';
 
+import { Artwork } from '@/components/player/Artwork';
+import { LikeButton } from '@/components/player/LikeButton';
+import { PlayingBars } from '@/components/player/PlayingBars';
+import { SeekBar } from '@/components/player/SeekBar';
+import { VolumeSlider } from '@/components/player/VolumeSlider';
 import { IconButton } from '@/components/ui/Button';
+import { useCurrentTrack, usePlayer } from '@/lib/player/store';
 import { useUi } from '@/lib/stores/ui';
 
-/**
- * The always-visible mini player. Stage 1 lays it out in its empty
- * state; the playback engine (Stage 2) feeds it a track and makes the
- * controls live.
- */
+const REPEAT_LABELS = {
+  off: 'Repeat: off',
+  all: 'Repeat: all songs',
+  one: 'Repeat: this song',
+} as const;
+
+/** The always-visible mini player. */
 export function PlayerBar() {
+  const track = useCurrentTrack();
+  const playing = usePlayer((state) => state.playing);
+  const loading = usePlayer((state) => state.loading);
+  const shuffle = usePlayer((state) => state.shuffle);
+  const repeat = usePlayer((state) => state.repeat);
+  const togglePlay = usePlayer((state) => state.togglePlay);
+  const next = usePlayer((state) => state.next);
+  const previous = usePlayer((state) => state.previous);
+  const toggleShuffle = usePlayer((state) => state.toggleShuffle);
+  const cycleRepeat = usePlayer((state) => state.cycleRepeat);
   const queueOpen = useUi((state) => state.queueOpen);
   const toggleQueue = useUi((state) => state.toggleQueue);
 
-  // Wired up by the playback engine in Stage 2.
-  const track = null as null | { title: string; artist: string };
-  const playing = false;
   const hasTrack = track !== null;
 
   return (
@@ -38,29 +54,62 @@ export function PlayerBar() {
     >
       {/* Track */}
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-surface-3 text-fg-subtle">
-          <Music2 className="size-5" />
+        <div className="relative size-14 shrink-0 overflow-hidden rounded-xl shadow-float">
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={track?.id ?? 'empty'}
+              initial={{ opacity: 0, scale: 1.08 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-0"
+            >
+              <Artwork hash={track?.artworkHash ?? null} className="size-full" />
+            </motion.div>
+          </AnimatePresence>
         </div>
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-fg">
-            {track?.title ?? 'Nothing playing'}
+
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-fg">
+            {hasTrack && <PlayingBars playing={playing} className="shrink-0" />}
+            {track?.albumId != null ? (
+              <Link href={`/album?id=${track.albumId}`} className="truncate hover:underline">
+                {track.title}
+              </Link>
+            ) : (
+              <span className="truncate">{track?.title ?? 'Nothing playing'}</span>
+            )}
           </span>
           <span className="truncate text-xs text-fg-muted">
-            {track?.artist ?? 'Pick a song to start listening'}
+            {!track ? (
+              'Pick a song to start listening'
+            ) : track.artistId !== null ? (
+              <Link href={`/artist?id=${track.artistId}`} className="hover:text-fg hover:underline">
+                {track.artistName}
+              </Link>
+            ) : (
+              'Unknown artist'
+            )}
           </span>
         </div>
-        <IconButton label="Like" size="sm" disabled={!hasTrack} className="ml-1">
-          <Heart className="size-4" />
-        </IconButton>
+
+        <LikeButton track={track} />
       </div>
 
       {/* Transport */}
-      <div className="flex flex-col items-center gap-1.5">
+      <div className="flex flex-col items-center gap-1">
         <div className="flex items-center gap-2">
-          <IconButton label="Shuffle" size="sm" disabled={!hasTrack}>
+          <IconButton
+            label={shuffle ? 'Shuffle: on' : 'Shuffle: off'}
+            aria-pressed={shuffle}
+            active={shuffle}
+            size="sm"
+            disabled={!hasTrack}
+            onClick={toggleShuffle}
+          >
             <Shuffle className="size-4" />
           </IconButton>
-          <IconButton label="Previous" disabled={!hasTrack}>
+          <IconButton label="Previous" disabled={!hasTrack} onClick={previous}>
             <SkipBack className="size-[18px] fill-current" />
           </IconButton>
           <IconButton
@@ -68,25 +117,43 @@ export function PlayerBar() {
             size="lg"
             variant="primary"
             disabled={!hasTrack}
+            onClick={togglePlay}
+            className="shadow-[0_6px_20px_-8px_var(--accent)]"
           >
-            {playing ? (
-              <Pause className="size-5 fill-current" />
-            ) : (
-              <Play className="ml-0.5 size-5 fill-current" />
-            )}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={loading && playing ? 'loading' : playing ? 'pause' : 'play'}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex"
+              >
+                {loading && playing ? (
+                  <LoaderCircle className="size-5 animate-spin" />
+                ) : playing ? (
+                  <Pause className="size-5 fill-current" />
+                ) : (
+                  <Play className="ml-0.5 size-5 fill-current" />
+                )}
+              </motion.span>
+            </AnimatePresence>
           </IconButton>
-          <IconButton label="Next" disabled={!hasTrack}>
+          <IconButton label="Next" disabled={!hasTrack} onClick={next}>
             <SkipForward className="size-[18px] fill-current" />
           </IconButton>
-          <IconButton label="Repeat" size="sm" disabled={!hasTrack}>
-            <Repeat className="size-4" />
+          <IconButton
+            label={REPEAT_LABELS[repeat]}
+            aria-pressed={repeat !== 'off'}
+            active={repeat !== 'off'}
+            size="sm"
+            disabled={!hasTrack}
+            onClick={cycleRepeat}
+          >
+            {repeat === 'one' ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
           </IconButton>
         </div>
-        <div className="flex w-full items-center gap-3 text-[11px] tabular-nums text-fg-subtle">
-          <span className="w-9 text-right">0:00</span>
-          <div className="h-1 flex-1 rounded-full bg-surface-3" />
-          <span className="w-9">0:00</span>
-        </div>
+        <SeekBar />
       </div>
 
       {/* Extras */}
@@ -99,13 +166,8 @@ export function PlayerBar() {
         >
           <ListMusic className="size-[18px]" />
         </IconButton>
-        <div className="flex items-center gap-2 pl-1">
-          <Volume2 className="size-[18px] text-fg-muted" aria-hidden="true" />
-          <div className="h-1 w-24 rounded-full bg-surface-3">
-            <div className="h-full w-3/4 rounded-full bg-fg-muted" />
-          </div>
-        </div>
-        <IconButton label="Open Now Playing" disabled={!hasTrack} className="ml-1">
+        <VolumeSlider />
+        <IconButton label="Now Playing arrives in Stage 4" disabled className="ml-1">
           <Maximize2 className="size-[18px]" />
         </IconButton>
       </div>

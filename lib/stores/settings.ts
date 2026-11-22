@@ -10,12 +10,15 @@ import type { JsonValue } from '@/lib/tauri/types';
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type NowPlayingMode = 'vinyl' | 'studio';
 export type MotionLevel = 'full' | 'calm' | 'off';
+/** Seconds of overlap between songs; 0 = gapless handover. */
+export type CrossfadeSeconds = 0 | 3 | 6 | 9;
 
 export interface Settings {
   theme: ThemePreference;
   nowPlayingMode: NowPlayingMode;
   motion: MotionLevel;
   railCollapsed: boolean;
+  crossfade: CrossfadeSeconds;
 }
 
 export const THEME_STORAGE_KEY = 'theme';
@@ -25,6 +28,7 @@ const DEFAULTS: Settings = {
   nowPlayingMode: 'vinyl',
   motion: 'full',
   railCollapsed: false,
+  crossfade: 0,
 };
 
 // Values read from the database are validated, so a stale or
@@ -34,6 +38,7 @@ const ALLOWED: { [K in keyof Settings]: readonly Settings[K][] } = {
   nowPlayingMode: ['vinyl', 'studio'],
   motion: ['full', 'calm', 'off'],
   railCollapsed: [true, false],
+  crossfade: [0, 3, 6, 9],
 };
 
 interface SettingsStore extends Settings {

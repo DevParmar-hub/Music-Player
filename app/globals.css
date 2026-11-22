@@ -204,6 +204,25 @@ body::after {
   scrollbar-color: var(--border-strong) transparent;
 }
 
+/* The "now playing" bars (components/player/PlayingBars.tsx). */
+@keyframes playing-bar {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Menus and dialogs scale in from their anchor. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
 /* Motion: Off. Components also check the setting, this catches CSS
    transitions everywhere else. */
 [data-motion="off"] *,
